@@ -33,7 +33,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { title, description, imageUrl } = body;
+    const { title, description, imageUrl, category, chapters, duration, level, syllabus } = body;
 
     // Validate input
     if (!title) {
@@ -49,6 +49,11 @@ export async function POST(request: Request) {
         title,
         description,
         imageUrl,
+        category,
+        chapters,
+        duration,
+        level,
+        syllabus,
       },
     });
 

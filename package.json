@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "postinstall": "prisma generate",
-    "setup:postgres": "bash ./scripts/setup-postgres.sh"
+    "setup:postgres": "bash ./scripts/setup-postgres.sh",
+    "seed:courses": "node scripts/seed-courses.js"
   },
   "dependencies": {
     "@prisma/client": "^6.6.0",

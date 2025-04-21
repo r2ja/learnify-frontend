@@ -6,100 +6,72 @@ import { motion } from 'framer-motion';
 import { BookOpen, Clock, Award } from 'lucide-react';
 
 // Types
+interface Chapter {
+  title: string;
+  content: string;
+  readings: string[];
+  exercises: number;
+}
+
+interface Syllabus {
+  chapters: Chapter[];
+}
+
 interface Course {
   id: string;
   title: string;
   description: string;
   chapters: number;
   duration: string;
-  level: 'Beginner' | 'Intermediate' | 'Advanced';
-  image: string;
+  level: string;
+  imageUrl: string;
   category: string;
+  syllabus?: Syllabus;
 }
 
-// Dummy course data
-const coursesData: Course[] = [
-  {
-    id: 'intro-to-programming',
-    title: 'Introduction to Programming',
-    description: 'Learn the fundamentals of programming with this comprehensive course.',
-    chapters: 12,
-    duration: '10 hours',
-    level: 'Beginner',
-    image: '/assets/images/courses/programming.jpg',
-    category: 'Computer Science'
-  },
-  {
-    id: 'data-structures',
-    title: 'Data Structures and Algorithms',
-    description: 'Master the essential data structures and algorithms for software development.',
-    chapters: 16,
-    duration: '15 hours',
-    level: 'Intermediate',
-    image: '/assets/images/courses/data-structures.jpg',
-    category: 'Computer Science'
-  },
-  {
-    id: 'machine-learning',
-    title: 'Introduction to Machine Learning',
-    description: 'Explore the basics of machine learning and build your first models.',
-    chapters: 14,
-    duration: '12 hours',
-    level: 'Intermediate',
-    image: '/assets/images/courses/machine-learning.jpg',
-    category: 'Data Science'
-  },
-  {
-    id: 'web-development',
-    title: 'Modern Web Development',
-    description: 'Learn to build responsive and dynamic websites with modern frameworks.',
-    chapters: 18,
-    duration: '16 hours',
-    level: 'Intermediate',
-    image: '/assets/images/courses/web-dev.jpg',
-    category: 'Web Development'
-  },
-  {
-    id: 'mobile-app-development',
-    title: 'Mobile App Development',
-    description: 'Build cross-platform mobile apps using React Native.',
-    chapters: 15,
-    duration: '14 hours',
-    level: 'Intermediate',
-    image: '/assets/images/courses/mobile-dev.jpg',
-    category: 'Mobile Development'
-  },
-  {
-    id: 'advanced-ai',
-    title: 'Advanced Artificial Intelligence',
-    description: 'Dive deep into neural networks, NLP, and computer vision.',
-    chapters: 20,
-    duration: '18 hours',
-    level: 'Advanced',
-    image: '/assets/images/courses/ai.jpg',
-    category: 'Artificial Intelligence'
-  }
-];
-
-const categories = [
-  'All Categories',
-  'Computer Science',
-  'Data Science',
-  'Web Development',
-  'Mobile Development',
-  'Artificial Intelligence'
-];
-
-const levels = ['All Levels', 'Beginner', 'Intermediate', 'Advanced'];
-
 export function CoursesOverview() {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('All Categories');
   const [selectedLevel, setSelectedLevel] = useState('All Levels');
   const [searchQuery, setSearchQuery] = useState('');
   const [animateCards, setAnimateCards] = useState(false);
 
+  // Fetch courses from the API
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/courses');
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch courses');
+        }
+        
+        const data = await response.json();
+        setCourses(data);
+      } catch (err) {
+        console.error('Error fetching courses:', err);
+        setError('Failed to load courses. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCourses();
+  }, []);
+
+  // Get unique categories from courses
+  const categories = ['All Categories', 
+    ...Array.from(new Set(courses.map(course => course.category)))
+  ];
+
+  // Define levels options
+  const levels = ['All Levels', 'Beginner', 'Intermediate', 'Advanced'];
+
   // Filter courses based on selections
-  const filteredCourses = coursesData.filter(course => {
+  const filteredCourses = courses.filter(course => {
     const matchesCategory = selectedCategory === 'All Categories' || course.category === selectedCategory;
     const matchesLevel = selectedLevel === 'All Levels' || course.level === selectedLevel;
     const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase());
@@ -109,6 +81,33 @@ export function CoursesOverview() {
   useEffect(() => {
     setAnimateCards(true);
   }, []);
+
+  if (loading) {
+    return (
+      <div className="w-full p-6 md:p-8 flex justify-center items-center h-[70vh]">
+        <div className="text-center">
+          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-[var(--primary)] border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
+          <p className="mt-4 text-gray-600">Loading courses...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full p-6 md:p-8">
+        <div className="bg-red-50 text-red-600 p-4 rounded-md">
+          <p>{error}</p>
+          <button 
+            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full p-6 md:p-8">
@@ -171,7 +170,7 @@ export function CoursesOverview() {
 
         {/* Results Count */}
         <div className="mb-4 text-sm text-gray-600">
-          <p>Showing {filteredCourses.length} of {coursesData.length} courses</p>
+          <p>Showing {filteredCourses.length} of {courses.length} courses</p>
         </div>
 
         {/* Courses Grid - Khan Academy style */}
@@ -209,7 +208,7 @@ export function CoursesOverview() {
                     <div className="flex items-center text-xs text-gray-500 mt-auto space-x-4">
                       <div className="flex items-center">
                         <BookOpen size={14} className="mr-1" />
-                        <span>{course.chapters} Lessons</span>
+                        <span>{course.chapters} Chapters</span>
                       </div>
                       <div className="flex items-center">
                         <Clock size={14} className="mr-1" />
@@ -248,13 +247,13 @@ export function CoursesOverview() {
             </p>
             <button
               onClick={() => {
-                setSearchQuery('');
                 setSelectedCategory('All Categories');
                 setSelectedLevel('All Levels');
+                setSearchQuery('');
               }}
               className="px-4 py-2 bg-[var(--primary)] text-white rounded-md hover:brightness-110"
             >
-              Clear Filters
+              Reset Filters
             </button>
           </div>
         )}

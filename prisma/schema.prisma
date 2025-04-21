@@ -51,6 +51,11 @@ model Course {
   title       String
   description String?
   imageUrl    String?
+  category    String       @default("Computer Science")
+  chapters    Int          @default(1)
+  duration    String       @default("10 hours")
+  level       String       @default("Beginner")
+  syllabus    Json?        // Store chapter content as JSON
   students    User[]
   assessments Assessment[]
   createdAt   DateTime     @default(now())

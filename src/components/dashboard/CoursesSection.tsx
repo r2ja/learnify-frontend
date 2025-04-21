@@ -4,19 +4,31 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { courseApi } from '@/lib/api';
 
 // Define interfaces for type safety
 interface SyllabusItem {
   title: string;
-  duration: string;
+  content?: string;
+  readings?: string[];
+  exercises?: number;
+  duration?: string;
+}
+
+interface SyllabusData {
+  chapters?: SyllabusItem[];
 }
 
 interface Course {
   id: string;
   title: string;
-  lectures: number;
-  university: string;
-  syllabus: SyllabusItem[];
+  description?: string;
+  imageUrl?: string;
+  category: string;
+  chapters: number;
+  duration: string;
+  level: string;
+  syllabus?: SyllabusData | SyllabusItem[] | any;
 }
 
 interface CourseModalProps {
@@ -25,85 +37,6 @@ interface CourseModalProps {
   course: Course;
   onStartCourse: (courseId: string) => void;
 }
-
-// Enhanced course data with syllabus information
-const coursesData: Course[] = [
-  {
-    id: '1',
-    title: 'Fundamentals of Computer Science',
-    lectures: 24,
-    university: 'University',
-    syllabus: [
-      { title: 'Introduction to Computing', duration: '2 hours' },
-      { title: 'Computer Organization and Architecture', duration: '3 hours' },
-      { title: 'Data Representation', duration: '2 hours' },
-      { title: 'Operating Systems', duration: '3 hours' },
-      { title: 'Algorithms and Problem Solving', duration: '4 hours' },
-      { title: 'Introduction to Programming', duration: '5 hours' },
-      { title: 'Data Structures', duration: '5 hours' }
-    ]
-  },
-  {
-    id: '2',
-    title: 'Object Oriented Programming',
-    lectures: 24,
-    university: 'University',
-    syllabus: [
-      { title: 'OOP Concepts and Principles', duration: '3 hours' },
-      { title: 'Classes and Objects', duration: '3 hours' },
-      { title: 'Inheritance and Polymorphism', duration: '4 hours' },
-      { title: 'Abstraction and Encapsulation', duration: '3 hours' },
-      { title: 'Design Patterns', duration: '5 hours' },
-      { title: 'Exception Handling', duration: '3 hours' },
-      { title: 'Object-Oriented Analysis and Design', duration: '3 hours' }
-    ]
-  },
-  {
-    id: '3',
-    title: 'Technical Report Writing',
-    lectures: 24,
-    university: 'University',
-    syllabus: [
-      { title: 'Introduction to Technical Writing', duration: '2 hours' },
-      { title: 'Document Planning and Research', duration: '3 hours' },
-      { title: 'Organization and Structure', duration: '3 hours' },
-      { title: 'Technical Style and Language', duration: '3 hours' },
-      { title: 'Visual Elements and Data Presentation', duration: '4 hours' },
-      { title: 'Editing and Revision', duration: '3 hours' },
-      { title: 'Collaborative Writing', duration: '2 hours' },
-      { title: 'Documentation Tools', duration: '4 hours' }
-    ]
-  },
-  {
-    id: '4',
-    title: 'Introduction to Calculus I',
-    lectures: 24,
-    university: 'University',
-    syllabus: [
-      { title: 'Functions and Limits', duration: '4 hours' },
-      { title: 'Derivatives and Rules of Differentiation', duration: '5 hours' },
-      { title: 'Applications of Derivatives', duration: '4 hours' },
-      { title: 'Integration', duration: '5 hours' },
-      { title: 'Applications of Integration', duration: '4 hours' },
-      { title: 'Transcendental Functions', duration: '2 hours' }
-    ]
-  },
-  {
-    id: '5',
-    title: 'Introduction to Calculus II',
-    lectures: 24,
-    university: 'University',
-    syllabus: [
-      { title: 'Review of Integration', duration: '3 hours' },
-      { title: 'Techniques of Integration', duration: '5 hours' },
-      { title: 'Improper Integrals', duration: '3 hours' },
-      { title: 'Infinite Series', duration: '4 hours' },
-      { title: 'Power Series', duration: '3 hours' },
-      { title: 'Parametric Equations and Polar Coordinates', duration: '4 hours' },
-      { title: 'Vector Calculus', duration: '2 hours' }
-    ]
-  }
-];
 
 // Modal component for course details
 function CourseModal({ isOpen, onClose, course, onStartCourse }: CourseModalProps) {
@@ -123,6 +56,28 @@ function CourseModal({ isOpen, onClose, course, onStartCourse }: CourseModalProp
   }, [isOpen]);
   
   if (!isOpen || !mounted) return null;
+  
+  // Extract syllabus chapters from course data
+  let syllabusChapters: SyllabusItem[] = [];
+  
+  if (course.syllabus) {
+    // If syllabus has a chapters array (as in our seed data)
+    if (course.syllabus.chapters && Array.isArray(course.syllabus.chapters)) {
+      syllabusChapters = course.syllabus.chapters;
+    }
+    // If syllabus is directly an array of chapters
+    else if (Array.isArray(course.syllabus)) {
+      syllabusChapters = course.syllabus;
+    }
+  }
+  
+  // If we still don't have syllabus data, generate it based on chapter count
+  if (syllabusChapters.length === 0 && course.chapters > 0) {
+    syllabusChapters = Array.from({ length: course.chapters }, (_, idx) => ({
+      title: `Chapter ${idx + 1}`,
+      duration: `${Math.floor(Math.random() * 2) + 1} hours`
+    }));
+  }
   
   // Portal content
   const modalContent = (
@@ -151,7 +106,7 @@ function CourseModal({ isOpen, onClose, course, onStartCourse }: CourseModalProp
           </button>
           <h2 className="text-2xl font-bold">{course.title}</h2>
           <div className="text-white/80 mt-1">
-            {course.lectures} Lectures • {course.university}
+            {course.chapters} Lectures • {course.level}
           </div>
         </div>
         
@@ -159,15 +114,36 @@ function CourseModal({ isOpen, onClose, course, onStartCourse }: CourseModalProp
         <div className="overflow-y-auto p-6 flex-grow">
           <h3 className="text-lg font-bold mb-4">Course Syllabus</h3>
           <div className="space-y-4">
-            {course.syllabus.map((item: SyllabusItem, idx: number) => (
-              <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                <div className="flex items-center">
-                  <div className="bg-[var(--primary)] bg-opacity-10 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-[var(--primary)]">
-                    {idx + 1}
+            {syllabusChapters.map((chapter, idx) => (
+              <div key={idx} className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center">
+                    <div className="bg-[var(--primary)] bg-opacity-10 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-[var(--primary)]">
+                      {idx + 1}
+                    </div>
+                    <span className="font-medium">{chapter.title}</span>
                   </div>
-                  <span className="font-medium">{item.title}</span>
+                  <span className="text-gray-500 text-sm">
+                    {chapter.duration || (chapter.exercises ? `${chapter.exercises} exercises` : `1-2 hours`)}
+                  </span>
                 </div>
-                <span className="text-gray-500 text-sm">{item.duration}</span>
+                
+                {/* Show chapter content if available */}
+                {chapter.content && (
+                  <div className="mt-2 ml-11 text-sm text-gray-600">
+                    {chapter.content.length > 200 
+                      ? `${chapter.content.substring(0, 200)}...` 
+                      : chapter.content}
+                  </div>
+                )}
+                
+                {/* Show readings if available */}
+                {chapter.readings && chapter.readings.length > 0 && (
+                  <div className="mt-2 ml-11">
+                    <span className="text-xs font-semibold text-gray-500">Recommended reading:</span>
+                    <span className="text-xs text-gray-500 ml-1">{chapter.readings[0]}</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -195,17 +171,62 @@ function CourseModal({ isOpen, onClose, course, onStartCourse }: CourseModalProp
 
 export function CoursesSection() {
   const [activeTab, setActiveTab] = useState('All Courses');
-  const tabs = ['All Courses', 'Newest Courses', 'Top Rated'];
+  const tabs = ['All Courses']; // Simplified tabs as requested
   
   // State for modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [fetchingCourseDetails, setFetchingCourseDetails] = useState(false);
   
   const router = useRouter();
   
-  const handleViewCourse = (course: Course) => {
-    setSelectedCourse(course);
-    setIsModalOpen(true);
+  // Fetch courses from API
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        setLoading(true);
+        const data = await courseApi.getAll();
+        setCourses(data);
+      } catch (err) {
+        console.error('Error fetching courses:', err);
+        setError('Failed to load courses');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchCourses();
+  }, []);
+  
+  const handleViewCourse = async (course: Course) => {
+    try {
+      setFetchingCourseDetails(true);
+      
+      // Fetch detailed course info including syllabus
+      const detailedCourse = await courseApi.getById(course.id);
+      
+      // Ensure syllabus data is properly parsed if it's a string
+      if (typeof detailedCourse.syllabus === 'string') {
+        try {
+          detailedCourse.syllabus = JSON.parse(detailedCourse.syllabus);
+        } catch (e) {
+          console.error('Error parsing syllabus JSON:', e);
+        }
+      }
+      
+      setSelectedCourse(detailedCourse);
+      setIsModalOpen(true);
+    } catch (err) {
+      console.error('Error fetching course details:', err);
+      // Fall back to showing the basic course data
+      setSelectedCourse(course);
+      setIsModalOpen(true);
+    } finally {
+      setFetchingCourseDetails(false);
+    }
   };
   
   const handleStartCourse = (courseId: string) => {
@@ -244,29 +265,50 @@ export function CoursesSection() {
       </div>
       
       {/* Course List */}
-      <div className="space-y-4">
-        {coursesData.map((course, index) => (
-          <div 
-            key={course.id} 
-            className={`flex justify-between items-center py-4 border-b last:border-b-0 animate-fadeIn`}
-            style={{ animationDelay: `${(index + 1) * 100}ms` }}
+      {loading ? (
+        <div className="py-20 flex justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--primary)]"></div>
+        </div>
+      ) : error ? (
+        <div className="py-10 text-center">
+          <p className="text-red-500">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-4 text-[var(--primary)] underline"
           >
-            <div className="flex-1">
-              <h3 className="font-medium text-lg">{course.title}</h3>
-              <div className="text-gray-500 text-sm">{course.lectures} Lectures</div>
+            Try again
+          </button>
+        </div>
+      ) : courses.length === 0 ? (
+        <div className="py-10 text-center">
+          <p className="text-gray-500">No courses available at the moment.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {courses.map((course, index) => (
+            <div 
+              key={course.id} 
+              className={`flex justify-between items-center py-4 border-b last:border-b-0 animate-fadeIn`}
+              style={{ animationDelay: `${(index + 1) * 100}ms` }}
+            >
+              <div className="flex-1">
+                <h3 className="font-medium text-lg">{course.title}</h3>
+                <div className="text-gray-500 text-sm">{course.chapters} Lectures</div>
+              </div>
+              <div className="flex items-center">
+                <span className="text-gray-500 mr-4">{course.level}</span>
+                <button 
+                  className="py-2 px-4 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 text-sm"
+                  onClick={() => handleViewCourse(course)}
+                  disabled={fetchingCourseDetails}
+                >
+                  {fetchingCourseDetails ? 'Loading...' : 'View Course'}
+                </button>
+              </div>
             </div>
-            <div className="flex items-center">
-              <span className="text-gray-500 mr-4">{course.university}</span>
-              <button 
-                className="py-2 px-4 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 text-sm"
-                onClick={() => handleViewCourse(course)}
-              >
-                View Course
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       
       {/* Course Modal */}
       {selectedCourse && (
