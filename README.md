@@ -35,10 +35,10 @@ yarn install
 
 3. Set up PostgreSQL database:
 ```bash
-# Run the PostgreSQL setup script
-npm run setup:postgres
-
-# Or manually install PostgreSQL and create a database named 'frontend_app_db'
+# Install PostgreSQL and create a database named 'frontend_app_db'
+# You can use the following commands to create the database:
+createdb frontend_app_db
+# Or use a GUI like pgAdmin or DBeaver
 ```
 
 4. Create a `.env.local` file in the root directory with the following content:
@@ -53,16 +53,16 @@ NEXT_PUBLIC_API_URL="http://localhost:3000/api"
 # Authentication (for future use)
 NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="your-secret-key-change-in-production"
+JWT_SECRET="generate-a-secure-random-secret-key"
 
 # Environment
 NODE_ENV="development"
 ```
 
-5. Initialize the database schema:
+5. Initialize the database:
 ```bash
-npm run db:push
-# or to create migrations
-npm run db:migrate
+# Run the database initialization script
+npm run db:setup
 ```
 
 6. Run the development server:
@@ -78,7 +78,6 @@ yarn dev
 
 ```
 frontend-app/
-├── prisma/           # Database schema and migrations
 ├── public/           # Static assets
 ├── scripts/          # Setup and utility scripts
 ├── src/
@@ -91,8 +90,9 @@ frontend-app/
 │   │   ├── dashboard/   # Dashboard components
 │   │   ├── layout/      # Layout components
 │   │   ├── learning/    # Learning components
-│   │   └── user/        # User profile components
+│   │   └── profile/     # User profile components
 │   ├── lib/          # Utility functions, hooks, and API layer
+│   │   ├── models/      # Data repository layer for PostgreSQL
 ├── .env.local        # Environment variables (create this file locally)
 ├── package.json      # Project dependencies
 └── README.md         # Project documentation
@@ -102,6 +102,7 @@ frontend-app/
 
 The API is built using Next.js API routes and follows a RESTful pattern:
 
+- `/api/auth` - Authentication endpoints
 - `/api/users` - User management
 - `/api/courses` - Course management
 - `/api/assessments` - Assessment management
@@ -109,32 +110,34 @@ The API is built using Next.js API routes and follows a RESTful pattern:
 
 ## Database Management
 
-This project uses Prisma ORM with PostgreSQL. Here are some useful commands:
+This project uses direct PostgreSQL connections via the `pg` package. The database structure is defined and managed through the repository patterns in `src/lib/models/`.
 
 ```bash
-# Open Prisma Studio to manage your data
-npm run db:studio
-
-# Generate Prisma client after schema changes
-npm run db:generate
-
-# Push schema changes to the database
-npm run db:push
-
-# Create a migration for schema changes
-npm run db:migrate
+# Initialize the database with seed data
+npm run db:setup
 
 # Reset the database (caution: deletes all data)
 npm run db:reset
 ```
+
+## Data Access Layer
+
+The application uses a custom repository pattern to interact with the PostgreSQL database:
+
+- `src/lib/db.ts` - Database connection pool setup
+- `src/lib/models/` - Repository implementations for each entity:
+  - `userRepository.ts` - User data access
+  - `courseRepository.ts` - Course data access
+  - `learningProfileRepository.ts` - Learning profile data access
+  - etc.
 
 ## Technologies Used
 
 - **Next.js**: React framework for server-side rendering and static site generation
 - **TypeScript**: Type-safe JavaScript
 - **Tailwind CSS**: Utility-first CSS framework
-- **Prisma**: Modern database ORM
-- **PostgreSQL**: Relational database
+- **PostgreSQL**: Relational database with direct connection
+- **Node-Postgres**: PostgreSQL client for Node.js
 - **React**: JavaScript library for building user interfaces
 
 ## Deployment
