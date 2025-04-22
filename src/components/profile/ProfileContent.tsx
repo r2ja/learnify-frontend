@@ -15,11 +15,6 @@ interface UserProfile {
   newPassword: string;
   confirmPassword: string;
   profileImage?: string;
-  notifications: {
-    email: boolean;
-    sms: boolean;
-    browser: boolean;
-  };
 }
 
 // Form validation schema
@@ -29,11 +24,6 @@ const profileSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   learningStyle: z.string(),
   bio: z.string().max(500, "Bio must be less than 500 characters"),
-  notifications: z.object({
-    email: z.boolean(),
-    sms: z.boolean(),
-    browser: z.boolean(),
-  })
 });
 
 // Password schema that is only validated when currentPassword is provided
@@ -65,11 +55,6 @@ export function ProfileContent() {
     newPassword: '',
     confirmPassword: '',
     profileImage: '',
-    notifications: {
-      email: true,
-      sms: false,
-      browser: true,
-    }
   });
 
   // Form states
@@ -154,18 +139,10 @@ export function ProfileContent() {
     const { name, value, type } = e.target;
     
     if (name.includes('.')) {
-      // Handle nested objects (e.g., notifications.email)
+      // This was previously handling notifications, but we removed that functionality
+      // Keeping the structure in case other nested objects are added in the future
       const [parent, child] = name.split('.');
-      
-      if (parent === 'notifications') {
-        setProfile(prev => ({
-          ...prev,
-          notifications: {
-            ...prev.notifications,
-            [child]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
-          }
-        }));
-      }
+      console.warn(`Nested property ${parent}.${child} change attempted but not implemented`);
     } else {
       // Handle top-level fields
       setProfile(prev => ({
@@ -531,60 +508,6 @@ export function ProfileContent() {
                   </div>
                 </div>
               )}
-            </div>
-            
-            {/* Notification Preferences */}
-            <div>
-              <h2 className="text-xl font-semibold text-gray-800 mb-4 pb-2 border-b">
-                Notification Preferences
-              </h2>
-              
-              <div className="space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="notificationEmail"
-                    name="notifications.email"
-                    checked={profile.notifications.email}
-                    onChange={handleChange}
-                    disabled={!isEditing}
-                    className="h-4 w-4 rounded border-gray-300 text-[var(--primary)] focus:ring-[var(--primary)]"
-                  />
-                  <label htmlFor="notificationEmail" className="ml-3 block text-sm font-medium text-gray-700">
-                    Email Notifications
-                  </label>
-                </div>
-                
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="notificationSms"
-                    name="notifications.sms"
-                    checked={profile.notifications.sms}
-                    onChange={handleChange}
-                    disabled={!isEditing}
-                    className="h-4 w-4 rounded border-gray-300 text-[var(--primary)] focus:ring-[var(--primary)]"
-                  />
-                  <label htmlFor="notificationSms" className="ml-3 block text-sm font-medium text-gray-700">
-                    SMS Notifications
-                  </label>
-                </div>
-                
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="notificationBrowser"
-                    name="notifications.browser"
-                    checked={profile.notifications.browser}
-                    onChange={handleChange}
-                    disabled={!isEditing}
-                    className="h-4 w-4 rounded border-gray-300 text-[var(--primary)] focus:ring-[var(--primary)]"
-                  />
-                  <label htmlFor="notificationBrowser" className="ml-3 block text-sm font-medium text-gray-700">
-                    Browser Notifications
-                  </label>
-                </div>
-              </div>
             </div>
             
             {/* Form Buttons */}
