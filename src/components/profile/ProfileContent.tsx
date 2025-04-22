@@ -4,13 +4,16 @@ import React, { useState, useEffect } from 'react';
 import { z } from 'zod';
 import { ProfileAvatar } from './ProfileAvatar';
 import { useAuth } from '@/components/auth/AuthContext';
+import { useToast } from '@/components/ui/ToastProvider';
 
 interface UserProfile {
   firstName: string;
   lastName: string;
   email: string;
-  learningStyle: string;
-  bio: string;
+  processingStyle: string;
+  perceptionStyle: string;
+  inputStyle: string;
+  understandingStyle: string;
   currentPassword: string;
   newPassword: string;
   confirmPassword: string;
@@ -22,8 +25,10 @@ const profileSchema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters"),
   lastName: z.string().min(2, "Last name must be at least 2 characters"),
   email: z.string().email("Please enter a valid email address"),
-  learningStyle: z.string(),
-  bio: z.string().max(500, "Bio must be less than 500 characters"),
+  processingStyle: z.string(),
+  perceptionStyle: z.string(),
+  inputStyle: z.string(),
+  understandingStyle: z.string(),
 });
 
 // Password schema that is only validated when currentPassword is provided
@@ -43,14 +48,17 @@ const passwordSchema = z.object({
 
 export function ProfileContent() {
   const { user, refreshUserData } = useAuth();
+  const { showToast } = useToast();
   
   // Initial profile data
   const [profile, setProfile] = useState<UserProfile>({
     firstName: '',
     lastName: '',
     email: '',
-    learningStyle: 'Visual Learner',
-    bio: '',
+    processingStyle: 'Active',
+    perceptionStyle: 'Intuitive',
+    inputStyle: 'Visual',
+    understandingStyle: 'Sequential',
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
@@ -61,17 +69,14 @@ export function ProfileContent() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
 
   // Learning style options
-  const learningStyles = [
-    'Visual Learner',
-    'Auditory Learner',
-    'Reading/Writing Learner',
-    'Kinesthetic Learner'
-  ];
+  const processingStyles = ['Active', 'Reflective'];
+  const perceptionStyles = ['Sensing', 'Intuitive'];
+  const inputStyles = ['Visual', 'Verbal'];
+  const understandingStyles = ['Sequential', 'Global'];
 
   // Fetch user profile data
   useEffect(() => {
@@ -97,8 +102,10 @@ export function ProfileContent() {
         }
         
         // Attempt to fetch learning profile if available
-        let learningStyle = 'Visual Learner';
-        let bio = '';
+        let processingStyle = 'Active';
+        let perceptionStyle = 'Intuitive';
+        let inputStyle = 'Visual';
+        let understandingStyle = 'Sequential';
         
         try {
           console.log(`ProfileContent: Fetching learning profile for user ID: ${user.id}`);
@@ -108,8 +115,10 @@ export function ProfileContent() {
           if (profileResponse.ok) {
             const profileData = await profileResponse.json();
             console.log('Learning profile data received:', JSON.stringify(profileData, null, 2));
-            learningStyle = profileData.learningStyle || 'Visual Learner';
-            bio = profileData.preferences?.bio || '';
+            processingStyle = profileData.processingStyle || 'Active';
+            perceptionStyle = profileData.perceptionStyle || 'Intuitive';
+            inputStyle = profileData.inputStyle || 'Visual';
+            understandingStyle = profileData.understandingStyle || 'Sequential';
           } else {
             console.warn('Learning profile fetch returned non-OK status:', profileResponse.status);
           }
@@ -121,8 +130,10 @@ export function ProfileContent() {
           firstName,
           lastName,
           email: user.email || '',
-          learningStyle,
-          bio,
+          processingStyle,
+          perceptionStyle,
+          inputStyle,
+          understandingStyle,
           profileImage: user.image || ''
         });
         
@@ -131,8 +142,10 @@ export function ProfileContent() {
           firstName,
           lastName,
           email: user.email || '',
-          learningStyle,
-          bio,
+          processingStyle,
+          perceptionStyle,
+          inputStyle,
+          understandingStyle,
           currentPassword: '',
           newPassword: '',
           confirmPassword: '',
@@ -265,10 +278,11 @@ export function ProfileContent() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          learningStyle: profile.learningStyle,
-          preferences: {
-            bio: profile.bio
-          },
+          processingStyle: profile.processingStyle,
+          perceptionStyle: profile.perceptionStyle,
+          inputStyle: profile.inputStyle,
+          understandingStyle: profile.understandingStyle,
+          preferences: {}
         }),
       });
       
@@ -304,9 +318,8 @@ export function ProfileContent() {
       // Refresh user data in auth context
       await refreshUserData();
       
-      // Show success message
-      setSuccessMessage('Profile updated successfully!');
-      setTimeout(() => setSuccessMessage(''), 3000);
+      // Show success toast instead of inline message
+      showToast('success', 'Profile updated successfully!');
       
       // Clear password fields and image file after successful update
       setProfile(prev => ({
@@ -321,6 +334,9 @@ export function ProfileContent() {
       setIsEditing(false);
     } catch (error) {
       console.error('Error updating profile:', error);
+      // Show error toast
+      showToast('error', error instanceof Error ? error.message : 'An unexpected error occurred');
+      
       setErrors({
         form: error instanceof Error ? error.message : 'An unexpected error occurred',
       });
@@ -344,12 +360,6 @@ export function ProfileContent() {
               </button>
             ) : null}
           </div>
-
-          {successMessage && (
-            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6 animate-fadeIn">
-              {successMessage}
-            </div>
-          )}
 
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Profile Image */}
@@ -423,44 +433,109 @@ export function ProfileContent() {
                 Learning Preferences
               </h2>
               
+              <div className="mb-4 p-4 bg-blue-50 rounded-md">
+                <h3 className="text-md font-medium text-blue-800 mb-2">Your Learning Style Profile</h3>
+                <p className="text-sm text-blue-700 mb-2">
+                  Your learning style is based on four dimensions that affect how you best process and understand information.
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="learningStyle" className="block text-sm font-medium text-gray-700 mb-1">
-                    Learning Style
+                  <label htmlFor="processingStyle" className="block text-sm font-medium text-gray-700 mb-1">
+                    Processing Style
                   </label>
                   <select
-                    id="learningStyle"
-                    name="learningStyle"
-                    value={profile.learningStyle}
+                    id="processingStyle"
+                    name="processingStyle"
+                    value={profile.processingStyle}
                     onChange={handleChange}
                     disabled={!isEditing}
-                    className={`w-full px-3 py-2 border rounded-md ${errors.learningStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
+                    className={`w-full px-3 py-2 border rounded-md ${errors.processingStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
                   >
-                    {learningStyles.map(style => (
+                    {processingStyles.map(style => (
                       <option key={style} value={style}>{style}</option>
                     ))}
                   </select>
-                  {errors.learningStyle && <p className="mt-1 text-sm text-red-500">{errors.learningStyle}</p>}
+                  {errors.processingStyle && <p className="mt-1 text-sm text-red-500">{errors.processingStyle}</p>}
+                  <p className="text-xs text-gray-500 mt-1">
+                    <span className="font-semibold">Active:</span> Learns by doing and collaborating.
+                    <br />
+                    <span className="font-semibold">Reflective:</span> Learns by thinking things through alone.
+                  </p>
                 </div>
-              </div>
-              
-              <div className="mt-6">
-                <label htmlFor="bio" className="block text-sm font-medium text-gray-700 mb-1">
-                  Bio
-                </label>
-                <textarea
-                  id="bio"
-                  name="bio"
-                  rows={4}
-                  value={profile.bio}
-                  onChange={handleChange}
-                  disabled={!isEditing}
-                  className={`w-full px-3 py-2 border rounded-md ${errors.bio ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
-                />
-                {errors.bio && <p className="mt-1 text-sm text-red-500">{errors.bio}</p>}
-                <p className="text-sm text-gray-500 mt-1">
-                  {profile.bio.length}/500 characters
-                </p>
+                
+                <div>
+                  <label htmlFor="perceptionStyle" className="block text-sm font-medium text-gray-700 mb-1">
+                    Perception Style
+                  </label>
+                  <select
+                    id="perceptionStyle"
+                    name="perceptionStyle"
+                    value={profile.perceptionStyle}
+                    onChange={handleChange}
+                    disabled={!isEditing}
+                    className={`w-full px-3 py-2 border rounded-md ${errors.perceptionStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
+                  >
+                    {perceptionStyles.map(style => (
+                      <option key={style} value={style}>{style}</option>
+                    ))}
+                  </select>
+                  {errors.perceptionStyle && <p className="mt-1 text-sm text-red-500">{errors.perceptionStyle}</p>}
+                  <p className="text-xs text-gray-500 mt-1">
+                    <span className="font-semibold">Sensing:</span> Prefers concrete facts and practical applications.
+                    <br />
+                    <span className="font-semibold">Intuitive:</span> Prefers concepts, theories and innovation.
+                  </p>
+                </div>
+                
+                <div>
+                  <label htmlFor="inputStyle" className="block text-sm font-medium text-gray-700 mb-1">
+                    Input Style
+                  </label>
+                  <select
+                    id="inputStyle"
+                    name="inputStyle"
+                    value={profile.inputStyle}
+                    onChange={handleChange}
+                    disabled={!isEditing}
+                    className={`w-full px-3 py-2 border rounded-md ${errors.inputStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
+                  >
+                    {inputStyles.map(style => (
+                      <option key={style} value={style}>{style}</option>
+                    ))}
+                  </select>
+                  {errors.inputStyle && <p className="mt-1 text-sm text-red-500">{errors.inputStyle}</p>}
+                  <p className="text-xs text-gray-500 mt-1">
+                    <span className="font-semibold">Visual:</span> Learns best from images, diagrams and demonstrations.
+                    <br />
+                    <span className="font-semibold">Verbal:</span> Learns best from written and spoken explanations.
+                  </p>
+                </div>
+                
+                <div>
+                  <label htmlFor="understandingStyle" className="block text-sm font-medium text-gray-700 mb-1">
+                    Understanding Style
+                  </label>
+                  <select
+                    id="understandingStyle"
+                    name="understandingStyle"
+                    value={profile.understandingStyle}
+                    onChange={handleChange}
+                    disabled={!isEditing}
+                    className={`w-full px-3 py-2 border rounded-md ${errors.understandingStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
+                  >
+                    {understandingStyles.map(style => (
+                      <option key={style} value={style}>{style}</option>
+                    ))}
+                  </select>
+                  {errors.understandingStyle && <p className="mt-1 text-sm text-red-500">{errors.understandingStyle}</p>}
+                  <p className="text-xs text-gray-500 mt-1">
+                    <span className="font-semibold">Sequential:</span> Learns in linear steps, with logical progression.
+                    <br />
+                    <span className="font-semibold">Global:</span> Learns in large jumps, seeing the big picture first.
+                  </p>
+                </div>
               </div>
             </div>
             

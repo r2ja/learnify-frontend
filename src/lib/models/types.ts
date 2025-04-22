@@ -24,7 +24,10 @@ export interface User extends BaseEntity {
 // Learning profile entity
 export interface LearningProfile extends BaseEntity {
   userId: string;
-  learningStyle: string;
+  processingStyle: string;
+  perceptionStyle: string;
+  inputStyle: string;
+  understandingStyle: string;
   preferences: string | null; // JSON string in PostgreSQL
   assessmentDate: Date;
 }
