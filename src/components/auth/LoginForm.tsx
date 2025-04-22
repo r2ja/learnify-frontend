@@ -79,12 +79,13 @@ export function LoginForm() {
     setLoading(true);
 
     try {
-      // Call the login API
+      // Call the login API with credentials included
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Important for cookies to be sent/received
         body: JSON.stringify(formData),
       });
       

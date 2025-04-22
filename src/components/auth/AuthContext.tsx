@@ -30,19 +30,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Check if there's a token in cookies
-        const token = getCookie('auth_token');
+        // Fetch the current user data with credentials included
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include', // Include cookies in the request
+        });
         
-        if (token) {
-          // Fetch the current user data
-          const response = await fetch('/api/auth/me');
-          if (response.ok) {
-            const data = await response.json();
-            setUser(data.user);
-          } else {
-            // Token expired or invalid, clear it
-            deleteCookie('auth_token');
-          }
+        if (response.ok) {
+          const data = await response.json();
+          setUser(data.user);
+        } else {
+          // Token expired or invalid, clear it
+          deleteCookie('auth_token');
         }
       } catch (error) {
         console.error('Auth check error:', error);
@@ -65,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Include cookies in the request
       });
 
       if (response.ok) {

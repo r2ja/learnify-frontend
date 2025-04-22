@@ -6,10 +6,16 @@ const prisma = new PrismaClient();
 
 export async function GET(request: Request) {
   try {
-    // Get token from cookies via header
-    const token = request.headers.get('cookie')?.split(';')
-      .find(c => c.trim().startsWith('auth_token='))
-      ?.split('=')[1];
+    // Get the cookies from the request
+    const cookieHeader = request.headers.get('cookie') || '';
+    const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+      const [key, value] = cookie.trim().split('=');
+      if (key) acc[key] = value;
+      return acc;
+    }, {} as Record<string, string>);
+    
+    // Get the auth token from cookies
+    const token = cookies['auth_token'];
 
     // If no token, user is not authenticated
     if (!token) {

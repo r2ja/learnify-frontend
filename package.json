@@ -12,6 +12,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
+    "db:seed": "node scripts/seed.js",
     "postinstall": "prisma generate",
     "setup:postgres": "bash ./scripts/setup-postgres.sh",
     "seed:courses": "node scripts/seed-courses.js"

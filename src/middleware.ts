@@ -13,6 +13,7 @@ const publicPaths = [
   '/api/auth/signup',
   '/api/auth/logout',
   '/api/auth/me',
+  '/api/auth/check',
 ];
 
 // Check if the path is public
