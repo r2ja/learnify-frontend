@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { userRepository } from '@/lib/models/userRepository';
 
 export async function GET() {
   try {
-    const users = await db.user.findMany({
+    const users = await userRepository.findMany({
       select: {
         id: true,
         name: true,
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     }
 
     // Check if user already exists
-    const existingUser = await db.user.findUnique({
+    const existingUser = await userRepository.findUnique({
       where: { email },
     });
 
@@ -49,22 +49,21 @@ export async function POST(request: Request) {
     }
 
     // Create new user
-    const user = await db.user.create({
+    const user = await userRepository.create({
       data: {
         name,
         email,
         password, // In production, hash this password
         role: role || 'STUDENT',
       },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-      },
     });
 
-    return NextResponse.json(user, { status: 201 });
+    return NextResponse.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    }, { status: 201 });
   } catch (error) {
     console.error('Error creating user:', error);
     return NextResponse.json(

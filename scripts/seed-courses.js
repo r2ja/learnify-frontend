@@ -1,6 +1,11 @@
-const { PrismaClient } = require('@prisma/client');
+const { Pool } = require('pg');
+const { v4: uuidv4 } = require('uuid');
 
-const prisma = new PrismaClient();
+// Create a PostgreSQL pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
 // Course data with detailed chapter information
 const coursesData = [
@@ -277,25 +282,85 @@ const coursesData = [
 
 async function main() {
   console.log('Start seeding courses...');
+  let client = null;
   
   try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    
     // First, delete existing courses to avoid duplicates
-    await prisma.course.deleteMany({});
+    await client.query('DELETE FROM "_AssessmentToUser"');
+    await client.query('DELETE FROM "Assessment"');
+    await client.query('DELETE FROM "_CourseToUser"');
+    await client.query('DELETE FROM "Course"');
     console.log('Cleared existing courses');
+    
+    const courseIds = [];
     
     // Then insert the new courses
     for (const course of coursesData) {
-      const createdCourse = await prisma.course.create({
-        data: course
-      });
-      console.log(`Created course with ID: ${createdCourse.id}`);
+      const courseId = uuidv4();
+      const now = new Date();
+      
+      // Convert syllabus to JSON string
+      const syllabus = JSON.stringify(course.syllabus);
+      
+      const result = await client.query(
+        `INSERT INTO "Course" (
+          id, title, description, "imageUrl", category, chapters, 
+          duration, level, syllabus, "createdAt", "updatedAt"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+        [
+          courseId,
+          course.title,
+          course.description,
+          course.imageUrl,
+          course.category,
+          course.chapters,
+          course.duration,
+          course.level,
+          syllabus,
+          now,
+          now
+        ]
+      );
+      
+      courseIds.push(result.rows[0].id);
+      console.log(`Created course with ID: ${result.rows[0].id}`);
     }
     
+    // Get all student users
+    const studentsResult = await client.query(
+      `SELECT id FROM "User" WHERE role = 'STUDENT'`
+    );
+    
+    if (studentsResult.rows.length > 0) {
+      const studentId = studentsResult.rows[0].id;
+      
+      // Enroll the student in all courses
+      for (const courseId of courseIds) {
+        await client.query(
+          `INSERT INTO "_CourseToUser" ("A", "B")
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [courseId, studentId]
+        );
+        console.log(`Enrolled student ${studentId} in course ${courseId}`);
+      }
+    }
+    
+    await client.query('COMMIT');
     console.log('Seeding completed successfully');
   } catch (error) {
+    if (client) {
+      await client.query('ROLLBACK');
+    }
     console.error('Error during seeding:', error);
   } finally {
-    await prisma.$disconnect();
+    if (client) {
+      client.release();
+    }
+    await pool.end();
   }
 }
 

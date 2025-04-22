@@ -9,6 +9,8 @@ interface User {
   email: string;
   name?: string;
   role: string;
+  image?: string;
+  createdAt?: string;
 }
 
 interface AuthContextType {
@@ -17,6 +19,7 @@ interface AuthContextType {
   login: (userData: User) => void;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
+  refreshUserData: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,24 +29,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  // Fetch current user data from the API
+  const fetchUserData = async (): Promise<User | null> => {
+    try {
+      console.log('AuthContext: Fetching user data from /api/auth/me');
+      // Fetch the current user data with credentials included
+      const response = await fetch('/api/auth/me', {
+        credentials: 'include', // Include cookies in the request
+      });
+      
+      console.log('AuthContext: /api/auth/me response status:', response.status);
+      
+      if (response.ok) {
+        const userData = await response.json();
+        console.log('AuthContext: User data received:', userData);
+        
+        // Set the user state with the complete data from the API
+        setUser(userData);
+        return userData;
+      } else {
+        // Token expired or invalid, clear it
+        console.log('AuthContext: Authentication failed, clearing token');
+        deleteCookie('auth_token');
+        setUser(null);
+        return null;
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
+      setUser(null);
+      return null;
+    }
+  };
+
   // Check for authentication on page load
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Fetch the current user data with credentials included
-        const response = await fetch('/api/auth/me', {
-          credentials: 'include', // Include cookies in the request
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setUser(data.user);
-        } else {
-          // Token expired or invalid, clear it
-          deleteCookie('auth_token');
-        }
-      } catch (error) {
-        console.error('Auth check error:', error);
+        await fetchUserData();
       } finally {
         setLoading(false);
       }
@@ -53,11 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = (userData: User) => {
+    console.log('AuthContext: Login with user data:', userData);
     setUser(userData);
   };
 
   const logout = async () => {
     try {
+      console.log('AuthContext: Logging out');
       const response = await fetch('/api/auth/logout', {
         method: 'POST',
         headers: {
@@ -75,6 +99,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Function to manually refresh user data
+  const refreshUserData = async (): Promise<User | null> => {
+    console.log('AuthContext: Manually refreshing user data');
+    return fetchUserData();
+  };
+
   return (
     <AuthContext.Provider 
       value={{ 
@@ -82,7 +112,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login, 
         logout, 
         isAuthenticated: !!user,
-        loading 
+        loading,
+        refreshUserData 
       }}
     >
       {children}

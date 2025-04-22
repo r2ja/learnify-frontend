@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { createToken, setTokenCookie } from '@/lib/jwt';
-
-const prisma = new PrismaClient();
+import { createToken } from '@/lib/jwt';
+import { userRepository } from '@/lib/models/userRepository';
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +17,7 @@ export async function POST(request: Request) {
     }
 
     // Find the user
-    const user = await prisma.user.findUnique({
+    const user = await userRepository.findUnique({
       where: { email },
     });
 
@@ -79,7 +77,5 @@ export async function POST(request: Request) {
       { error: 'An unexpected error occurred' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 } 

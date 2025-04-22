@@ -42,7 +42,7 @@ const passwordSchema = z.object({
 });
 
 export function ProfileContent() {
-  const { user } = useAuth();
+  const { user, refreshUserData } = useAuth();
   
   // Initial profile data
   const [profile, setProfile] = useState<UserProfile>({
@@ -76,51 +76,70 @@ export function ProfileContent() {
   // Fetch user profile data
   useEffect(() => {
     const fetchUserData = async () => {
-      if (!user) return;
+      if (!user) {
+        console.log('No user found in auth context, skipping profile data fetch');
+        setIsLoading(false);
+        return;
+      }
       
       setIsLoading(true);
+      console.log('ProfileContent: Using user data from auth context:', user);
       
       try {
-        // Fetch user details
-        const userResponse = await fetch(`/api/users/${user.id}`);
-        if (!userResponse.ok) throw new Error('Failed to fetch user data');
-        
-        const userData = await userResponse.json();
-        
         // Split name into first and last name
         let firstName = '';
         let lastName = '';
         
-        if (userData.name) {
-          const nameParts = userData.name.split(' ');
+        if (user.name) {
+          const nameParts = user.name.split(' ');
           firstName = nameParts[0] || '';
           lastName = nameParts.slice(1).join(' ') || '';
         }
         
-        // Fetch learning profile if available
+        // Attempt to fetch learning profile if available
         let learningStyle = 'Visual Learner';
+        let bio = '';
         
         try {
+          console.log(`ProfileContent: Fetching learning profile for user ID: ${user.id}`);
           const profileResponse = await fetch(`/api/users/${user.id}/learning-profile`);
+          console.log('Learning profile API response status:', profileResponse.status);
+          
           if (profileResponse.ok) {
             const profileData = await profileResponse.json();
-            learningStyle = profileData.learningStyle;
+            console.log('Learning profile data received:', JSON.stringify(profileData, null, 2));
+            learningStyle = profileData.learningStyle || 'Visual Learner';
+            bio = profileData.preferences?.bio || '';
+          } else {
+            console.warn('Learning profile fetch returned non-OK status:', profileResponse.status);
           }
         } catch (err) {
           console.error('Error fetching learning profile:', err);
         }
         
-        setProfile({
-          ...profile,
+        console.log('ProfileContent: Setting profile state with:', {
           firstName,
           lastName,
-          email: userData.email || '',
+          email: user.email || '',
           learningStyle,
-          bio: userData.bio || '',
-          profileImage: userData.image || '',
+          bio,
+          profileImage: user.image || ''
+        });
+        
+        // Update profile state with user data
+        setProfile({
+          firstName,
+          lastName,
+          email: user.email || '',
+          learningStyle,
+          bio,
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+          profileImage: user.image || '',
         });
       } catch (err) {
-        console.error('Error fetching user data:', err);
+        console.error('Error loading profile data:', err);
       } finally {
         setIsLoading(false);
       }
@@ -208,12 +227,16 @@ export function ProfileContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!user) return;
+    if (!user) {
+      console.error('Cannot submit form: No user logged in');
+      return;
+    }
     
     // Validate the form
     if (!validateForm()) return;
     
     setIsSaving(true);
+    console.log('Saving profile updates for user:', user.id);
     
     try {
       // Update user profile
@@ -225,12 +248,14 @@ export function ProfileContent() {
         body: JSON.stringify({
           name: `${profile.firstName} ${profile.lastName}`.trim(),
           email: profile.email,
-          // Add other fields as needed
         }),
       });
       
+      console.log('User update response status:', userUpdateResponse.status);
+      
       if (!userUpdateResponse.ok) {
-        throw new Error('Failed to update user profile');
+        const errorData = await userUpdateResponse.json();
+        throw new Error(`Failed to update user profile: ${errorData.error || userUpdateResponse.statusText}`);
       }
       
       // Update learning profile
@@ -242,17 +267,21 @@ export function ProfileContent() {
         body: JSON.stringify({
           learningStyle: profile.learningStyle,
           preferences: {
-            // Additional preferences can be stored here
+            bio: profile.bio
           },
         }),
       });
       
+      console.log('Learning profile update response status:', learningProfileResponse.status);
+      
       if (!learningProfileResponse.ok) {
-        throw new Error('Failed to update learning profile');
+        const errorData = await learningProfileResponse.json();
+        throw new Error(`Failed to update learning profile: ${errorData.error || learningProfileResponse.statusText}`);
       }
       
       // Handle password change if requested
       if (profile.currentPassword && profile.newPassword) {
+        console.log('Updating password');
         const passwordResponse = await fetch(`/api/users/${user.id}/password`, {
           method: 'PUT',
           headers: {
@@ -264,11 +293,16 @@ export function ProfileContent() {
           }),
         });
         
+        console.log('Password update response status:', passwordResponse.status);
+        
         if (!passwordResponse.ok) {
           const passwordError = await passwordResponse.json();
           throw new Error(passwordError.error || 'Failed to update password');
         }
       }
+      
+      // Refresh user data in auth context
+      await refreshUserData();
       
       // Show success message
       setSuccessMessage('Profile updated successfully!');
@@ -286,6 +320,7 @@ export function ProfileContent() {
       // Exit edit mode
       setIsEditing(false);
     } catch (error) {
+      console.error('Error updating profile:', error);
       setErrors({
         form: error instanceof Error ? error.message : 'An unexpected error occurred',
       });

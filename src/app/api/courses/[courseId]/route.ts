@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { courseRepository } from '@/lib/models/courseRepository';
 
 export async function GET(
   request: Request,
   { params }: { params: { courseId: string } }
 ) {
   try {
-    const { courseId } = await params;
+    const courseId = params.courseId;
 
     if (!courseId) {
       return NextResponse.json(
@@ -15,26 +15,13 @@ export async function GET(
       );
     }
 
-    const course = await db.course.findUnique({
+    const course = await courseRepository.findUnique({
       where: {
         id: courseId,
       },
       include: {
-        assessments: {
-          select: {
-            id: true,
-            title: true,
-            description: true,
-            dueDate: true,
-          },
-        },
-        students: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
+        assessments: true,
+        students: true,
       },
     });
 
@@ -61,7 +48,7 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const { courseId } = await params;
+    const courseId = params.courseId;
 
     if (!courseId) {
       return NextResponse.json(
@@ -70,7 +57,7 @@ export async function PATCH(
       );
     }
 
-    const updatedCourse = await db.course.update({
+    const updatedCourse = await courseRepository.update({
       where: {
         id: courseId,
       },
@@ -92,7 +79,7 @@ export async function DELETE(
   { params }: { params: { courseId: string } }
 ) {
   try {
-    const { courseId } = await params;
+    const courseId = params.courseId;
 
     if (!courseId) {
       return NextResponse.json(
@@ -101,7 +88,7 @@ export async function DELETE(
       );
     }
 
-    await db.course.delete({
+    await courseRepository.delete({
       where: {
         id: courseId,
       },
