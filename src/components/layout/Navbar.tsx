@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NavItem } from './NavItem';
+import { useAuth } from '@/components/auth/AuthContext';
+import { LogOut } from 'lucide-react';
 
 export function Navbar() {
   const pathname = usePathname();
+  const { logout } = useAuth();
   
   return (
     <nav className="w-20 h-screen fixed left-0 top-0 bg-[var(--sidebar)] rounded-r-3xl p-4 flex flex-col items-center shadow-lg">
@@ -74,6 +77,16 @@ export function Navbar() {
             </svg>
           }
         />
+        
+        {/* Logout Button */}
+        <button 
+          onClick={logout}
+          className="w-10 h-10 rounded-lg text-gray-400 hover:text-white hover:bg-red-600/20 flex items-center justify-center transition-colors"
+          aria-label="Logout"
+          title="Logout"
+        >
+          <LogOut className="h-6 w-6" />
+        </button>
       </div>
     </nav>
   );
