@@ -25,10 +25,6 @@ const profileSchema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters"),
   lastName: z.string().min(2, "Last name must be at least 2 characters"),
   email: z.string().email("Please enter a valid email address"),
-  processingStyle: z.string(),
-  perceptionStyle: z.string(),
-  inputStyle: z.string(),
-  understandingStyle: z.string(),
 });
 
 // Password schema that is only validated when currentPassword is provided
@@ -252,7 +248,7 @@ export function ProfileContent() {
     console.log('Saving profile updates for user:', user.id);
     
     try {
-      // Update user profile
+      // Update user profile - only send name and email
       const userUpdateResponse = await fetch(`/api/users/${user.id}`, {
         method: 'PUT',
         headers: {
@@ -271,27 +267,7 @@ export function ProfileContent() {
         throw new Error(`Failed to update user profile: ${errorData.error || userUpdateResponse.statusText}`);
       }
       
-      // Update learning profile
-      const learningProfileResponse = await fetch(`/api/users/${user.id}/learning-profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          processingStyle: profile.processingStyle,
-          perceptionStyle: profile.perceptionStyle,
-          inputStyle: profile.inputStyle,
-          understandingStyle: profile.understandingStyle,
-          preferences: {}
-        }),
-      });
-      
-      console.log('Learning profile update response status:', learningProfileResponse.status);
-      
-      if (!learningProfileResponse.ok) {
-        const errorData = await learningProfileResponse.json();
-        throw new Error(`Failed to update learning profile: ${errorData.error || learningProfileResponse.statusText}`);
-      }
+      // Learning profiles are now read-only and set by assessments, so we don't update them here
       
       // Handle password change if requested
       if (profile.currentPassword && profile.newPassword) {
@@ -318,7 +294,7 @@ export function ProfileContent() {
       // Refresh user data in auth context
       await refreshUserData();
       
-      // Show success toast instead of inline message
+      // Show success toast
       showToast('success', 'Profile updated successfully!');
       
       // Clear password fields and image file after successful update
@@ -437,6 +413,7 @@ export function ProfileContent() {
                 <h3 className="text-md font-medium text-blue-800 mb-2">Your Learning Style Profile</h3>
                 <p className="text-sm text-blue-700 mb-2">
                   Your learning style is based on four dimensions that affect how you best process and understand information.
+                  This profile was determined by your assessment and is used to personalize your learning experience.
                 </p>
               </div>
 
@@ -445,19 +422,9 @@ export function ProfileContent() {
                   <label htmlFor="processingStyle" className="block text-sm font-medium text-gray-700 mb-1">
                     Processing Style
                   </label>
-                  <select
-                    id="processingStyle"
-                    name="processingStyle"
-                    value={profile.processingStyle}
-                    onChange={handleChange}
-                    disabled={!isEditing}
-                    className={`w-full px-3 py-2 border rounded-md ${errors.processingStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
-                  >
-                    {processingStyles.map(style => (
-                      <option key={style} value={style}>{style}</option>
-                    ))}
-                  </select>
-                  {errors.processingStyle && <p className="mt-1 text-sm text-red-500">{errors.processingStyle}</p>}
+                  <div className="px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-700">
+                    {profile.processingStyle}
+                  </div>
                   <p className="text-xs text-gray-500 mt-1">
                     <span className="font-semibold">Active:</span> Learns by doing and collaborating.
                     <br />
@@ -469,19 +436,9 @@ export function ProfileContent() {
                   <label htmlFor="perceptionStyle" className="block text-sm font-medium text-gray-700 mb-1">
                     Perception Style
                   </label>
-                  <select
-                    id="perceptionStyle"
-                    name="perceptionStyle"
-                    value={profile.perceptionStyle}
-                    onChange={handleChange}
-                    disabled={!isEditing}
-                    className={`w-full px-3 py-2 border rounded-md ${errors.perceptionStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
-                  >
-                    {perceptionStyles.map(style => (
-                      <option key={style} value={style}>{style}</option>
-                    ))}
-                  </select>
-                  {errors.perceptionStyle && <p className="mt-1 text-sm text-red-500">{errors.perceptionStyle}</p>}
+                  <div className="px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-700">
+                    {profile.perceptionStyle}
+                  </div>
                   <p className="text-xs text-gray-500 mt-1">
                     <span className="font-semibold">Sensing:</span> Prefers concrete facts and practical applications.
                     <br />
@@ -493,19 +450,9 @@ export function ProfileContent() {
                   <label htmlFor="inputStyle" className="block text-sm font-medium text-gray-700 mb-1">
                     Input Style
                   </label>
-                  <select
-                    id="inputStyle"
-                    name="inputStyle"
-                    value={profile.inputStyle}
-                    onChange={handleChange}
-                    disabled={!isEditing}
-                    className={`w-full px-3 py-2 border rounded-md ${errors.inputStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
-                  >
-                    {inputStyles.map(style => (
-                      <option key={style} value={style}>{style}</option>
-                    ))}
-                  </select>
-                  {errors.inputStyle && <p className="mt-1 text-sm text-red-500">{errors.inputStyle}</p>}
+                  <div className="px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-700">
+                    {profile.inputStyle}
+                  </div>
                   <p className="text-xs text-gray-500 mt-1">
                     <span className="font-semibold">Visual:</span> Learns best from images, diagrams and demonstrations.
                     <br />
@@ -517,19 +464,9 @@ export function ProfileContent() {
                   <label htmlFor="understandingStyle" className="block text-sm font-medium text-gray-700 mb-1">
                     Understanding Style
                   </label>
-                  <select
-                    id="understandingStyle"
-                    name="understandingStyle"
-                    value={profile.understandingStyle}
-                    onChange={handleChange}
-                    disabled={!isEditing}
-                    className={`w-full px-3 py-2 border rounded-md ${errors.understandingStyle ? 'border-red-500' : 'border-gray-300'} ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}
-                  >
-                    {understandingStyles.map(style => (
-                      <option key={style} value={style}>{style}</option>
-                    ))}
-                  </select>
-                  {errors.understandingStyle && <p className="mt-1 text-sm text-red-500">{errors.understandingStyle}</p>}
+                  <div className="px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-700">
+                    {profile.understandingStyle}
+                  </div>
                   <p className="text-xs text-gray-500 mt-1">
                     <span className="font-semibold">Sequential:</span> Learns in linear steps, with logical progression.
                     <br />

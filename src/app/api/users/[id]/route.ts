@@ -63,18 +63,19 @@ async function handleUpdate(request: Request, params: RouteParams['params']) {
     console.log(`PATCH/PUT /api/users/${userId} - Updating user`);
 
     const body = await request.json();
-    const { name, email, image, role } = body;
+    const { name, email, image } = body;
 
-    console.log(`PATCH/PUT /api/users/${userId} - Update data:`, { name, email, role });
+    console.log(`PATCH/PUT /api/users/${userId} - Update data:`, { name, email });
+
+    // Build update object with only the fields we want to update
+    const updateData: { name?: string; email?: string; image?: string } = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (image !== undefined) updateData.image = image;
 
     const user = await userRepository.update({
       where: { id: userId },
-      data: {
-        name,
-        email,
-        image,
-        role,
-      },
+      data: updateData,
     });
 
     console.log(`PATCH/PUT /api/users/${userId} - User updated successfully`);
