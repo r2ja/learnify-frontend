@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: { courseId: string } }
 ) {
   try {
-    const courseId = params.courseId;
+    const { courseId } = params;
 
     if (!courseId) {
       return NextResponse.json(
@@ -48,7 +48,7 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const courseId = params.courseId;
+    const { courseId } = params;
 
     if (!courseId) {
       return NextResponse.json(
@@ -79,7 +79,7 @@ export async function DELETE(
   { params }: { params: { courseId: string } }
 ) {
   try {
-    const courseId = params.courseId;
+    const { courseId } = params;
 
     if (!courseId) {
       return NextResponse.json(

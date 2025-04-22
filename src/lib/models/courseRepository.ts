@@ -13,10 +13,16 @@ export const courseRepository = {
   /**
    * Find all courses with optional filtering
    */
-  async findMany({ select, take, skip }: { 
+  async findMany({ 
+    select, 
+    take, 
+    skip,
+    userId 
+  }: { 
     select?: Record<string, boolean>, 
     take?: number, 
-    skip?: number 
+    skip?: number,
+    userId?: string
   } = {}): Promise<Course[]> {
     // If select is provided, make sure each column name is properly quoted
     let fields;
@@ -26,20 +32,32 @@ export const courseRepository = {
         .map(key => `"${key}"`)
         .join(', ');
     } else {
-      fields = '*';
+      fields = 'c.*';
     }
     
     const limitClause = take ? `LIMIT ${take}` : '';
     const offsetClause = skip ? `OFFSET ${skip}` : '';
     
-    const sql = `
-      SELECT ${fields}
-      FROM "Course"
-      ${limitClause}
-      ${offsetClause}
-    `;
-    
-    return await query<Course>(sql);
+    let sql;
+    if (userId) {
+      sql = `
+        SELECT ${fields}, 
+               CASE WHEN cu."A" IS NOT NULL THEN true ELSE false END as "isEnrolled"
+        FROM "Course" c
+        LEFT JOIN "_CourseToUser" cu ON c.id = cu."B" AND cu."A" = $1
+        ${limitClause}
+        ${offsetClause}
+      `;
+      return await query<Course>(sql, [userId]);
+    } else {
+      sql = `
+        SELECT ${fields}
+        FROM "Course" c
+        ${limitClause}
+        ${offsetClause}
+      `;
+      return await query<Course>(sql);
+    }
   },
 
   /**

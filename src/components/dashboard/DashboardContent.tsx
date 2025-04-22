@@ -1,7 +1,7 @@
 'use client';
 
 import { DashboardHeader } from './DashboardHeader';
-import { CoursesSection } from './CoursesSection';
+import CoursesSection from './CoursesSection';
 import { DailyProgress } from './DailyProgress';
 import { QuizResults } from './QuizResults';
 import { NeedHelp } from './NeedHelp';

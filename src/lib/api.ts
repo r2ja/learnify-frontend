@@ -31,29 +31,34 @@ export async function apiClient<T = any>(
     requestOptions.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, requestOptions);
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, requestOptions);
 
-  // For DELETE requests that return 204 No Content
-  if (response.status === 204) {
-    return {} as T;
-  }
-
-  // Handle non-JSON responses
-  const contentType = response.headers.get('content-type');
-  if (!contentType || !contentType.includes('application/json')) {
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+    // For DELETE requests that return 204 No Content
+    if (response.status === 204) {
+      return {} as T;
     }
-    return {} as T;
+
+    // Handle non-JSON responses
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      return {} as T;
+    }
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || `API error: ${response.status}`);
+    }
+
+    return data as T;
+  } catch (error) {
+    console.error('API request failed:', error);
+    throw error;
   }
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || `API error: ${response.status}`);
-  }
-
-  return data as T;
 }
 
 /**
@@ -82,7 +87,12 @@ export const courseApi = {
   enroll: (courseId: string, userId: string) =>
     apiClient(`/courses/${courseId}/enroll`, {
       method: 'POST',
-      body: { userId },
+      body: { userId }
+    }),
+  unenroll: (courseId: string, userId: string) =>
+    apiClient(`/courses/${courseId}/enroll`, {
+      method: 'DELETE',
+      body: { userId }
     }),
 };
 

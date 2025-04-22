@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { MainLayout } from '@/components/layout/MainLayout';
+import { useToast } from '@/components/ui/ToastProvider';
 
 interface SyllabusItem {
   title: string;
@@ -26,14 +27,18 @@ interface CourseDetails {
   duration: string;
   level: string;
   syllabus?: SyllabusData | SyllabusItem[] | any;
+  isEnrolled?: boolean;
 }
 
 export default function CourseDetailPage() {
   const { courseId } = useParams();
+  const router = useRouter();
+  const { showToast } = useToast();
   const [course, setCourse] = useState<CourseDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formattedSyllabus, setFormattedSyllabus] = useState<SyllabusItem[]>([]);
+  const [enrolling, setEnrolling] = useState(false);
 
   useEffect(() => {
     const fetchCourse = async () => {
@@ -93,6 +98,66 @@ export default function CourseDetailPage() {
       fetchCourse();
     }
   }, [courseId]);
+
+  const handleEnroll = async () => {
+    if (!course) return;
+    
+    try {
+      setEnrolling(true);
+      
+      // Get the student user ID from the database
+      const userResponse = await fetch('/api/users?role=STUDENT');
+      
+      if (!userResponse.ok) {
+        throw new Error('Failed to fetch user data');
+      }
+      
+      const users = await userResponse.json();
+      
+      if (!users || users.length === 0) {
+        throw new Error('No student users found in the database');
+      }
+      
+      // Use the first student user
+      const userId = users[0].id;
+      console.log('Enrolling user with ID:', userId);
+      
+      const response = await fetch(`/api/courses/${courseId}/enroll`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to enroll: ${response.statusText}`);
+      }
+      
+      // Update the course state to reflect enrollment
+      setCourse(prevCourse => {
+        if (!prevCourse) return null;
+        return {
+          ...prevCourse,
+          isEnrolled: true
+        };
+      });
+      
+      // Show success message
+      showToast('success', 'Successfully enrolled in course!');
+      
+      // Redirect to dashboard after a short delay
+      setTimeout(() => {
+        router.push('/dashboard');
+      }, 1500);
+    } catch (err) {
+      console.error('Error enrolling in course:', err);
+      showToast('error', err instanceof Error ? err.message : 'Failed to enroll in course. Please try again.');
+    } finally {
+      setEnrolling(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -195,9 +260,22 @@ export default function CourseDetailPage() {
           {/* Sidebar */}
           <div>
             <div className="bg-white rounded-xl shadow-sm p-6 sticky top-6">
-              <button className="w-full py-3 px-4 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white rounded-lg font-medium transition-colors mb-4">
-                Enroll in Course
-              </button>
+              {course.isEnrolled ? (
+                <button 
+                  onClick={() => router.push('/dashboard')}
+                  className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors mb-4"
+                >
+                  Continue Learning
+                </button>
+              ) : (
+                <button 
+                  onClick={handleEnroll}
+                  disabled={enrolling}
+                  className="w-full py-3 px-4 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white rounded-lg font-medium transition-colors mb-4"
+                >
+                  {enrolling ? 'Enrolling...' : 'Enroll in Course'}
+                </button>
+              )}
               
               <div className="border-t pt-4 mt-4">
                 <h3 className="font-semibold mb-2">Course Details</h3>

@@ -1,10 +1,15 @@
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config({ path: '.env.local' });
 
-// Create a PostgreSQL pool
+// Create a PostgreSQL pool with explicit configuration
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'password',
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'frontend_app_db',
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
@@ -13,6 +18,13 @@ async function main() {
   
   try {
     console.log('Seeding database...');
+    console.log('Database configuration:', {
+      user: process.env.DB_USER || 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || 5432,
+      database: process.env.DB_NAME || 'frontend_app_db'
+    });
+    
     client = await pool.connect();
     
     // Start transaction
@@ -154,24 +166,17 @@ async function main() {
     
     console.log('Database seeding completed successfully!');
   } catch (error) {
-    // Rollback transaction on error
     if (client) {
       await client.query('ROLLBACK');
     }
     console.error('Error seeding database:', error);
-    process.exit(1);
+    throw error;
   } finally {
     if (client) {
       client.release();
     }
-    
-    // Close pool
     await pool.end();
   }
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  }); 
+main().catch(console.error); 

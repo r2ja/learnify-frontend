@@ -12,10 +12,16 @@ export const userRepository = {
   /**
    * Find all users with optional filtering
    */
-  async findMany({ select, take, skip }: { 
+  async findMany({ 
+    select, 
+    take, 
+    skip,
+    where
+  }: { 
     select?: Record<string, boolean>, 
     take?: number, 
-    skip?: number 
+    skip?: number,
+    where?: { role?: string }
   } = {}): Promise<User[]> {
     // If select is provided, make sure each column name is properly quoted
     let fields;
@@ -28,18 +34,27 @@ export const userRepository = {
       fields = '*';
     }
     
+    let whereClause = '';
+    const params: any[] = [];
+    
+    if (where?.role) {
+      whereClause = 'WHERE "role" = $1';
+      params.push(where.role);
+    }
+    
     const limitClause = take ? `LIMIT ${take}` : '';
     const offsetClause = skip ? `OFFSET ${skip}` : '';
     
     const sql = `
       SELECT ${fields}
       FROM "User"
+      ${whereClause}
       ${limitClause}
       ${offsetClause}
     `;
     
-    console.log('UserRepository.findMany SQL:', sql);
-    const users = await query<User>(sql);
+    console.log('UserRepository.findMany SQL:', sql, 'Params:', params);
+    const users = await query<User>(sql, params);
     console.log(`UserRepository.findMany - Found ${users.length} users`);
     return users;
   },

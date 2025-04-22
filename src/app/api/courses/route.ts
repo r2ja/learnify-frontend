@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import { courseRepository } from '@/lib/models/courseRepository';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const courses = await courseRepository.findMany();
-    return NextResponse.json(courses, { status: 200 });
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+    
+    const courses = await courseRepository.findMany({ userId: userId || undefined });
+    return NextResponse.json(courses);
   } catch (error) {
     console.error('Error fetching courses:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to fetch courses' },
       { status: 500 }
     );
   }

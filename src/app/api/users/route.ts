@@ -1,18 +1,22 @@
 import { NextResponse } from 'next/server';
 import { userRepository } from '@/lib/models/userRepository';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const role = searchParams.get('role');
+    
+    // Get users with optional role filtering
     const users = await userRepository.findMany({
       select: {
         id: true,
         name: true,
         email: true,
-        image: true,
         role: true,
       },
+      where: role ? { role } : undefined
     });
-
+    
     return NextResponse.json(users, { status: 200 });
   } catch (error) {
     console.error('Error fetching users:', error);

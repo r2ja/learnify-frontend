@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { courseApi } from '@/lib/api';
+import { useToast } from '@/components/ui/ToastProvider';
+import { useUser } from '@/lib/hooks/useUser';
+import { toast } from 'react-hot-toast';
 
 // Define interfaces for type safety
 interface SyllabusItem {
@@ -29,6 +32,7 @@ interface Course {
   duration: string;
   level: string;
   syllabus?: SyllabusData | SyllabusItem[] | any;
+  isEnrolled?: boolean;
 }
 
 interface CourseModalProps {
@@ -36,10 +40,12 @@ interface CourseModalProps {
   onClose: () => void;
   course: Course;
   onStartCourse: (courseId: string) => void;
+  onEnroll: (courseId: string) => Promise<void>;
+  isEnrolling: boolean;
 }
 
 // Modal component for course details
-function CourseModal({ isOpen, onClose, course, onStartCourse }: CourseModalProps) {
+function CourseModal({ isOpen, onClose, course, onStartCourse, onEnroll, isEnrolling }: CourseModalProps) {
   const [mounted, setMounted] = useState(false);
   
   useEffect(() => {
@@ -149,17 +155,42 @@ function CourseModal({ isOpen, onClose, course, onStartCourse }: CourseModalProp
           </div>
         </div>
         
-        {/* Footer with action button */}
-        <div className="p-6 border-t border-gray-200 flex justify-center">
-          <button 
-            onClick={() => onStartCourse(course.id)}
-            className="py-2 px-8 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 font-medium flex items-center"
-          >
-            <span>Learn Course</span>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </svg>
-          </button>
+        {/* Footer with action buttons */}
+        <div className="p-6 border-t border-gray-200 flex justify-center space-x-4">
+          {course.isEnrolled ? (
+            <button 
+              onClick={() => onStartCourse(course.id)}
+              className="py-2 px-8 rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-300 font-medium flex items-center"
+            >
+              <span>Continue Learning</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </button>
+          ) : (
+            <>
+              <button 
+                onClick={() => onEnroll(course.id)}
+                disabled={isEnrolling}
+                className="py-2 px-8 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 font-medium flex items-center"
+              >
+                <span>{isEnrolling ? 'Enrolling...' : 'Enroll Now'}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </button>
+              <button 
+                onClick={() => onStartCourse(course.id)}
+                className="py-2 px-8 rounded-md text-[var(--primary)] bg-white border border-[var(--primary)] hover:bg-gray-50 transition-colors duration-300 font-medium flex items-center"
+              >
+                <span>Preview Course</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -169,37 +200,83 @@ function CourseModal({ isOpen, onClose, course, onStartCourse }: CourseModalProp
   return createPortal(modalContent, document.body);
 }
 
-export function CoursesSection() {
+export default function CoursesSection() {
+  const { user, loading: userLoading } = useUser();
   const [activeTab, setActiveTab] = useState('All Courses');
-  const tabs = ['All Courses']; // Simplified tabs as requested
-  
-  // State for modal
+  const tabs = ['All Courses', 'Enrolled Courses'];
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [enrolledLoading, setEnrolledLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [enrolledError, setEnrolledError] = useState<string | null>(null);
   const [fetchingCourseDetails, setFetchingCourseDetails] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
   
   const router = useRouter();
+  const { showToast } = useToast();
   
-  // Fetch courses from API
+  // Fetch all courses
   useEffect(() => {
     const fetchCourses = async () => {
       try {
         setLoading(true);
-        const data = await courseApi.getAll();
+        setError(null);
+        const response = await fetch(`/api/courses?userId=${user?.id}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch courses');
+        }
+        const data = await response.json();
         setCourses(data);
-      } catch (err) {
-        console.error('Error fetching courses:', err);
+      } catch (error) {
+        console.error('Error fetching courses:', error);
         setError('Failed to load courses');
+        toast.error('Failed to load courses');
       } finally {
         setLoading(false);
       }
     };
-    
-    fetchCourses();
-  }, []);
+
+    if (!userLoading && user?.id) {
+      fetchCourses();
+    }
+  }, [user?.id, userLoading]);
+  
+  // Fetch enrolled courses
+  useEffect(() => {
+    const fetchEnrolledCourses = async () => {
+      try {
+        setEnrolledLoading(true);
+        setEnrolledError(null);
+        const response = await fetch(`/api/courses/enrolled?userId=${user?.id}`);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to fetch enrolled courses');
+        }
+        const data = await response.json();
+        setEnrolledCourses(data);
+      } catch (error) {
+        console.error('Error fetching enrolled courses:', error);
+        setEnrolledError('Failed to load enrolled courses');
+        toast.error('Failed to load enrolled courses');
+      } finally {
+        setEnrolledLoading(false);
+      }
+    };
+
+    if (!userLoading && user?.id) {
+      fetchEnrolledCourses();
+    }
+  }, [user?.id, userLoading]);
+  
+  // Get the appropriate courses and loading state based on active tab
+  const { currentCourses, isLoading, currentError } = useMemo(() => ({
+    currentCourses: activeTab === 'Enrolled Courses' ? enrolledCourses : courses,
+    isLoading: activeTab === 'Enrolled Courses' ? enrolledLoading : loading,
+    currentError: activeTab === 'Enrolled Courses' ? enrolledError : error
+  }), [activeTab, courses, enrolledCourses, loading, enrolledLoading, error, enrolledError]);
   
   const handleViewCourse = async (course: Course) => {
     try {
@@ -234,6 +311,74 @@ export function CoursesSection() {
     router.push(`/courses/${courseId}`);
     setIsModalOpen(false);
   };
+
+  const handleEnroll = async (courseId: string) => {
+    try {
+      setEnrolling(true);
+      
+      if (!user?.id) {
+        showToast('error', 'Please log in to enroll in courses');
+        return;
+      }
+      
+      // Make direct fetch call instead of using the API client
+      const response = await fetch(`/api/courses/${courseId}/enroll`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to enroll: ${response.statusText}`);
+      }
+      
+      // Update the course list to reflect enrollment
+      setCourses(prevCourses => 
+        prevCourses.map(course => 
+          course.id === courseId 
+            ? { ...course, isEnrolled: true }
+            : course
+        )
+      );
+      
+      // Update the selected course if it's the one being enrolled
+      if (selectedCourse && selectedCourse.id === courseId) {
+        setSelectedCourse({
+          ...selectedCourse,
+          isEnrolled: true
+        });
+      }
+      
+      // Refresh enrolled courses list
+      const enrolledResponse = await fetch(`/api/courses/enrolled?userId=${user.id}`);
+      if (enrolledResponse.ok) {
+        const enrolledData = await enrolledResponse.json();
+        setEnrolledCourses(enrolledData);
+      }
+      
+      // Show success message
+      showToast('success', 'Successfully enrolled in course!');
+      
+      // Close the modal after successful enrollment
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error('Error enrolling in course:', err);
+      showToast('error', err instanceof Error ? err.message : 'Failed to enroll in course. Please try again.');
+    } finally {
+      setEnrolling(false);
+    }
+  };
+  
+  if (userLoading || loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
   
   return (
     <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-gray-100 shadow-sm relative z-10 animate-fadeIn animation-delay-300">
@@ -265,13 +410,13 @@ export function CoursesSection() {
       </div>
       
       {/* Course List */}
-      {loading ? (
-        <div className="py-20 flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--primary)]"></div>
+      {isLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
-      ) : error ? (
+      ) : currentError ? (
         <div className="py-10 text-center">
-          <p className="text-red-500">{error}</p>
+          <p className="text-red-500">{currentError}</p>
           <button 
             onClick={() => window.location.reload()}
             className="mt-4 text-[var(--primary)] underline"
@@ -279,13 +424,17 @@ export function CoursesSection() {
             Try again
           </button>
         </div>
-      ) : courses.length === 0 ? (
+      ) : currentCourses.length === 0 ? (
         <div className="py-10 text-center">
-          <p className="text-gray-500">No courses available at the moment.</p>
+          <p className="text-gray-500">
+            {activeTab === 'Enrolled Courses' 
+              ? 'You haven\'t enrolled in any courses yet.' 
+              : 'No courses available at the moment.'}
+          </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {courses.map((course, index) => (
+          {currentCourses.map((course, index) => (
             <div 
               key={course.id} 
               className={`flex justify-between items-center py-4 border-b last:border-b-0 animate-fadeIn`}
@@ -297,13 +446,21 @@ export function CoursesSection() {
               </div>
               <div className="flex items-center">
                 <span className="text-gray-500 mr-4">{course.level}</span>
-                <button 
-                  className="py-2 px-4 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 text-sm"
-                  onClick={() => handleViewCourse(course)}
-                  disabled={fetchingCourseDetails}
-                >
-                  {fetchingCourseDetails ? 'Loading...' : 'View Course'}
-                </button>
+                {course.isEnrolled ? (
+                  <button 
+                    className="py-2 px-4 rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-300 text-sm"
+                    onClick={() => router.push(`/courses/${course.id}`)}
+                  >
+                    Continue Learning
+                  </button>
+                ) : (
+                  <button 
+                    className="py-2 px-4 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 text-sm"
+                    onClick={() => handleViewCourse(course)}
+                  >
+                    View Course
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -317,6 +474,8 @@ export function CoursesSection() {
           onClose={() => setIsModalOpen(false)} 
           course={selectedCourse}
           onStartCourse={handleStartCourse}
+          onEnroll={handleEnroll}
+          isEnrolling={enrolling}
         />
       )}
     </div>

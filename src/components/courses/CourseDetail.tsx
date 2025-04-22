@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { BookOpen, Clock, Award, ChevronRight, PlayCircle, Users, BarChart } from 'lucide-react';
+import { useUser } from '@/lib/hooks/useUser';
+import { toast } from 'react-hot-toast';
 
 // Types
 interface Chapter {
@@ -30,14 +32,17 @@ interface Course {
   syllabus?: Syllabus;
   createdAt: string;
   updatedAt: string;
+  isEnrolled: boolean;
 }
 
 export function CourseDetail({ courseId }: { courseId: string }) {
   const router = useRouter();
+  const { user, loading: userLoading } = useUser();
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [enrolling, setEnrolling] = useState(false);
 
   useEffect(() => {
     const fetchCourse = async () => {
@@ -68,8 +73,41 @@ export function CourseDetail({ courseId }: { courseId: string }) {
   }, [courseId]);
 
   const handleEnroll = async () => {
-    // In a real application, this would call an API to enroll the user in the course
-    alert('Enrollment feature coming soon!');
+    try {
+      if (!user?.id) {
+        toast.error('Please log in to enroll in courses');
+        return;
+      }
+
+      setEnrolling(true);
+      
+      const response = await fetch(`/api/courses/${courseId}/enroll`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to enroll: ${response.statusText}`);
+      }
+
+      // Update the course to show as enrolled
+      setCourse(prev => prev ? { ...prev, isEnrolled: true } : null);
+      
+      // Show success message
+      toast.success('Successfully enrolled in course!');
+      
+      // Redirect to the course content
+      router.push(`/courses/${courseId}/chapter/1`);
+    } catch (err) {
+      console.error('Error enrolling in course:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to enroll in course. Please try again.');
+    } finally {
+      setEnrolling(false);
+    }
   };
 
   if (loading) {
@@ -209,10 +247,11 @@ export function CourseDetail({ courseId }: { courseId: string }) {
               </div>
               
               <button 
-                onClick={handleEnroll} 
-                className="w-full py-3 bg-[var(--primary)] text-white font-medium rounded-md hover:brightness-110 transition-all"
+                onClick={handleEnroll}
+                disabled={enrolling} 
+                className="w-full py-3 bg-[var(--primary)] text-white font-medium rounded-md hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Enroll in this Course
+                {enrolling ? 'Enrolling...' : 'Enroll in this Course'}
               </button>
             </div>
           )}
@@ -261,10 +300,11 @@ export function CourseDetail({ courseId }: { courseId: string }) {
               
               <div className="mt-8">
                 <button 
-                  onClick={handleEnroll} 
-                  className="w-full py-3 bg-[var(--primary)] text-white font-medium rounded-md hover:brightness-110 transition-all"
+                  onClick={handleEnroll}
+                  disabled={enrolling} 
+                  className="w-full py-3 bg-[var(--primary)] text-white font-medium rounded-md hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Enroll in this Course
+                  {enrolling ? 'Enrolling...' : 'Enroll in this Course'}
                 </button>
               </div>
             </div>
