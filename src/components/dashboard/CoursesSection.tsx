@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -214,6 +214,9 @@ export default function CoursesSection() {
   const [enrolledError, setEnrolledError] = useState<string | null>(null);
   const [fetchingCourseDetails, setFetchingCourseDetails] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   
   const router = useRouter();
   const { showToast } = useToast();
@@ -372,6 +375,77 @@ export default function CoursesSection() {
     }
   };
   
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(null);
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Handle withdrawal from a course
+  const handleWithdraw = async (courseId: string) => {
+    try {
+      if (!user?.id) {
+        showToast('error', 'You must be logged in to withdraw from a course');
+        return;
+      }
+      
+      setWithdrawing(true);
+      
+      try {
+        const response = await fetch(`/api/courses/${courseId}/withdraw`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId: user.id }),
+        });
+        
+        // Try to parse the response as JSON
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || `Failed to withdraw: ${response.statusText}`);
+        }
+        
+        // Success path
+        // Update local state to reflect withdrawal
+        setCourses(prevCourses => 
+          prevCourses.map(course => 
+            course.id === courseId 
+              ? { ...course, isEnrolled: false }
+              : course
+          )
+        );
+        
+        // Remove from enrolled courses
+        setEnrolledCourses(prev => prev.filter(course => course.id !== courseId));
+        
+        // Close menu
+        setMenuOpen(null);
+        
+        // Show success message
+        showToast('success', 'Successfully withdrew from course');
+      } catch (responseError) {
+        console.error('Error with withdraw request:', responseError);
+        showToast('error', responseError instanceof Error ? responseError.message : 'Failed to withdraw from course');
+        throw responseError; // rethrow to be caught by the outer try-catch
+      }
+    } catch (err) {
+      console.error('Error withdrawing from course:', err);
+      showToast('error', err instanceof Error ? err.message : 'Failed to withdraw from course');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+  
   if (userLoading || loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -446,20 +520,61 @@ export default function CoursesSection() {
               </div>
               <div className="flex items-center">
                 <span className="text-gray-500 mr-4">{course.level}</span>
-                {course.isEnrolled ? (
-                  <button 
-                    className="py-2 px-4 rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-300 text-sm"
-                    onClick={() => router.push(`/courses/${course.id}`)}
-                  >
-                    Continue Learning
-                  </button>
-                ) : (
+                {!course.isEnrolled ? (
                   <button 
                     className="py-2 px-4 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 text-sm"
                     onClick={() => handleViewCourse(course)}
                   >
                     View Course
                   </button>
+                ) : (
+                  <div className="flex items-center relative">
+                    <button 
+                      className="py-2 px-4 rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-300 text-sm mr-2"
+                      onClick={() => router.push(`/courses/${course.id}`)}
+                    >
+                      Continue Learning
+                    </button>
+                    <button
+                      className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 transition-colors"
+                      onClick={() => setMenuOpen(menuOpen === course.id ? null : course.id)}
+                      aria-label="Course options"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                      </svg>
+                    </button>
+                    
+                    {menuOpen === course.id && (
+                      <div 
+                        ref={menuRef}
+                        className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg py-1 z-20 w-48"
+                      >
+                        <button
+                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center"
+                          onClick={() => handleWithdraw(course.id)}
+                          disabled={withdrawing}
+                        >
+                          {withdrawing ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Withdraw from Course
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

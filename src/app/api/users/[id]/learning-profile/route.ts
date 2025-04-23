@@ -42,7 +42,6 @@ export async function GET(request: Request, { params }: RouteParams) {
         perceptionStyle: 'Intuitive',
         inputStyle: 'Visual',
         understandingStyle: 'Sequential',
-        preferences: null,
         assessmentDate: new Date(),
         createdAt: new Date(),
         updatedAt: new Date()
@@ -65,6 +64,9 @@ export async function PUT(request: Request, { params }: RouteParams) {
     const userId = params.id;
     const body = await request.json();
     
+    console.log('PUT /api/users/[id]/learning-profile - User ID:', userId);
+    console.log('Request body:', JSON.stringify(body, null, 2));
+    
     if (!userId) {
       return NextResponse.json(
         { error: 'User ID is required' },
@@ -78,39 +80,59 @@ export async function PUT(request: Request, { params }: RouteParams) {
     });
 
     if (!user) {
+      console.error('User not found for ID:', userId);
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
-    // Upsert the learning profile (create if doesn't exist, update if it does)
-    const updatedProfile = await learningProfileRepository.upsert({
+    // Ensure all profile fields are present with default values if missing
+    const profileData = {
+      processingStyle: body.processingStyle || 'Active',
+      perceptionStyle: body.perceptionStyle || 'Intuitive',
+      inputStyle: body.inputStyle || 'Visual',
+      understandingStyle: body.understandingStyle || 'Sequential',
+      assessmentDate: new Date(),
+    };
+
+    console.log('Attempting upsert with data:', JSON.stringify(profileData, null, 2));
+
+    // Try to find the existing profile first
+    const existingProfile = await learningProfileRepository.findUnique({
       where: { userId },
-      create: {
-        userId,
-        processingStyle: body.processingStyle || 'Active',
-        perceptionStyle: body.perceptionStyle || 'Intuitive',
-        inputStyle: body.inputStyle || 'Visual',
-        understandingStyle: body.understandingStyle || 'Sequential',
-        preferences: body.preferences || null,
-        assessmentDate: new Date(),
-      },
-      update: {
-        processingStyle: body.processingStyle,
-        perceptionStyle: body.perceptionStyle,
-        inputStyle: body.inputStyle,
-        understandingStyle: body.understandingStyle,
-        preferences: body.preferences,
-        assessmentDate: new Date(),
-      },
     });
 
+    let updatedProfile;
+    
+    if (existingProfile) {
+      console.log('Existing profile found, updating profile for user:', userId);
+      // Update existing profile
+      updatedProfile = await learningProfileRepository.update({
+        where: { userId },
+        data: profileData,
+      });
+    } else {
+      console.log('No existing profile found, creating new profile for user:', userId);
+      // Create new profile
+      updatedProfile = await learningProfileRepository.create({
+        data: {
+          userId,
+          ...profileData,
+        },
+      });
+    }
+
+    console.log('Profile operation successful, returning profile:', JSON.stringify(updatedProfile, null, 2));
     return NextResponse.json(updatedProfile, { status: 200 });
   } catch (error) {
     console.error('Error updating learning profile:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error', 
+        details: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined 
+      },
       { status: 500 }
     );
   }

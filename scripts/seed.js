@@ -15,7 +15,7 @@ const pool = new Pool({
 
 async function main() {
   let client = null;
-
+  
   try {
     console.log('Seeding database with test data...');
     console.log('Database configuration:', {
@@ -24,9 +24,9 @@ async function main() {
       port: process.env.DB_PORT || 5432,
       database: process.env.DB_NAME || 'frontend_app_db'
     });
-
+    
     client = await pool.connect();
-
+    
     // Start transaction
     await client.query('BEGIN');
 
@@ -53,11 +53,11 @@ async function main() {
     const hashedPassword = await bcrypt.hash('Password123!', 10);
     const userId = uuidv4(); // text ID
     const now = new Date();
-
+    
     const userResult = await client.query(
       `INSERT INTO public."User" (id, name, email, password, image, language, "createdAt", "updatedAt")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (email) DO UPDATE
+       ON CONFLICT (email) DO UPDATE 
        SET name = $2, image = $5, language = $6, "updatedAt" = $8
        RETURNING id, email`,
       [
@@ -239,12 +239,12 @@ async function main() {
 
     // --- Commit Transaction ---
     await client.query('COMMIT');
-
+    
     console.log('Database seeding completed successfully!');
   } catch (error) {
     if (client) {
       try {
-        await client.query('ROLLBACK');
+      await client.query('ROLLBACK');
         console.log('Transaction rolled back due to error.');
       } catch (rollbackError) {
         console.error('Error rolling back transaction:', rollbackError);
