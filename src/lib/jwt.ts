@@ -3,29 +3,28 @@ import { type NextRequest } from 'next/server';
 import { getCookie, setCookie, deleteCookie } from 'cookies-next';
 import { type GetServerSidePropsContext } from 'next';
 
-// Get JWT secret from environment variables
+// Get JWT secret from environment variables with a default fallback
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const TOKEN_EXPIRY = '7d'; // Token expires in 7 days
 const COOKIE_NAME = 'auth_token';
 
-export interface JwtPayload {
+interface TokenPayload {
   userId: string;
   email: string;
-  role: string;
 }
 
 // Create a JWT token
-export function createToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+export function createToken(payload: TokenPayload): string {
+  // Use the constant defined above instead of accessing process.env directly
+  return jwt.sign(payload, JWT_SECRET, {
+    expiresIn: TOKEN_EXPIRY,
+  });
 }
 
 // Verify a JWT token
-export function verifyToken(token: string): JwtPayload | null {
-  try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
-  } catch (error) {
-    return null;
-  }
+export function verifyToken(token: string): TokenPayload {
+  // Use the constant defined above instead of accessing process.env directly
+  return jwt.verify(token, JWT_SECRET) as TokenPayload;
 }
 
 // Set JWT token in cookies (client-side)
@@ -64,6 +63,5 @@ export async function getUserFromToken(token: string) {
   return {
     id: payload.userId,
     email: payload.email,
-    role: payload.role,
   };
 } 

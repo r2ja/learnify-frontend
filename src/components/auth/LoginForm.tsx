@@ -4,12 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { FormField } from './FormField';
-import { useAuth } from './AuthContext';
 
-export function LoginForm() {
+export default function LoginForm() {
   const router = useRouter();
-  const { login } = useAuth();
-  
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -33,7 +30,7 @@ export function LoginForm() {
       }));
     }
   };
-
+  
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
     let isValid = true;
@@ -55,9 +52,6 @@ export function LoginForm() {
     if (!formData.password) {
       errors.password = 'Password is required';
       isValid = false;
-    } else if (formData.password.length < 8) {
-      errors.password = 'Password must be at least 8 characters';
-      isValid = false;
     }
 
     setFieldErrors(errors);
@@ -70,7 +64,7 @@ export function LoginForm() {
     // Reset errors
     setError('');
     setFieldErrors({});
-    
+
     // Validate form before submission
     if (!validateForm()) {
       return;
@@ -88,16 +82,21 @@ export function LoginForm() {
         credentials: 'include', // Important for cookies to be sent/received
         body: JSON.stringify(formData),
       });
-      
-      const data = await response.json();
-      
+
+      let data;
+      try {
+        // Safely parse the JSON response
+        const responseText = await response.text();
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (jsonError) {
+        console.error('JSON parse error:', jsonError);
+        throw new Error('Server returned an invalid response.');
+      }
+
       if (!response.ok) {
         throw new Error(data.error || 'Login failed');
       }
-      
-      // Set user data in auth context
-      login(data.user);
-      
+
       // Navigate to the dashboard
       router.push('/dashboard');
     } catch (err) {

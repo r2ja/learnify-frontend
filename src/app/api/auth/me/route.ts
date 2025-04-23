@@ -19,45 +19,44 @@ export async function GET(request: Request) {
       );
     }
 
-    // Verify the token
-    const payload = verifyToken(authToken);
-    console.log('GET /api/auth/me - Token verification result:', !!payload);
+    try {
+      // Verify the token
+      const payload = verifyToken(authToken);
+      console.log('GET /api/auth/me - Token verification result:', !!payload);
+      console.log('GET /api/auth/me - User ID from token:', payload.userId);
 
-    if (!payload) {
-      console.log('GET /api/auth/me - Invalid token');
+      // Get the user from database
+      const user = await userRepository.findUnique({
+        where: { id: payload.userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+          language: true,
+          createdAt: true,
+        },
+      });
+
+      console.log('GET /api/auth/me - User found in database:', !!user);
+
+      if (!user) {
+        console.log('GET /api/auth/me - User not found in database');
+        return NextResponse.json(
+          { error: 'User not found' },
+          { status: 404 }
+        );
+      }
+
+      console.log('GET /api/auth/me - Returning user data:', JSON.stringify(user));
+      return NextResponse.json(user, { status: 200 });
+    } catch (tokenError) {
+      console.error('GET /api/auth/me - Token verification error:', tokenError);
       return NextResponse.json(
         { error: 'Invalid token' },
         { status: 401 }
       );
     }
-
-    console.log('GET /api/auth/me - User ID from token:', payload.userId);
-
-    // Get the user from database
-    const user = await userRepository.findUnique({
-      where: { id: payload.userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        image: true,
-        role: true,
-        createdAt: true,
-      },
-    });
-
-    console.log('GET /api/auth/me - User found in database:', !!user);
-
-    if (!user) {
-      console.log('GET /api/auth/me - User not found in database');
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    console.log('GET /api/auth/me - Returning user data:', JSON.stringify(user));
-    return NextResponse.json(user, { status: 200 });
   } catch (error) {
     console.error('Error in auth/me route:', error);
     return NextResponse.json(

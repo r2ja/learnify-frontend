@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
+import { compare } from 'bcryptjs';
 import { createToken } from '@/lib/jwt';
 import { userRepository } from '@/lib/models/userRepository';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { email, password } = body;
+    const { email, password } = await request.json();
 
-    // Validate inputs
+    // Validate input
     if (!email || !password) {
       return NextResponse.json(
         { error: 'Email and password are required' },
@@ -16,12 +15,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Find the user
-    const user = await userRepository.findUnique({
-      where: { email },
-    });
-
-    // Check if user exists
+    // Find user
+    const user = await userRepository.findUnique({ where: { email } });
     if (!user || !user.password) {
       return NextResponse.json(
         { error: 'Invalid credentials' },
@@ -30,51 +25,59 @@ export async function POST(request: Request) {
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
+    const isValidPassword = await compare(password, user.password);
+    if (!isValidPassword) {
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 }
       );
     }
 
-    // Generate JWT token
-    const token = createToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    try {
+      // Generate JWT token
+      const token = createToken({
+        userId: user.id,
+        email: user.email,
+      });
 
-    // Set the token in cookies
-    const response = NextResponse.json(
-      { 
-        success: true,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-        } 
-      },
-      { status: 200 }
-    );
+      // Create response with user data
+      const response = NextResponse.json(
+        {
+          success: true,
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            language: user.language,
+          },
+        },
+        { status: 200 }
+      );
 
-    // Set the cookie in the response
-    response.cookies.set({
-      name: 'auth_token',
-      value: token,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: '/',
-      sameSite: 'strict',
-    });
+      // Set the cookie in the response
+      response.cookies.set({
+        name: 'auth_token',
+        value: token,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+        path: '/',
+        sameSite: 'strict',
+      });
 
-    return response;
+      console.log('Login successful, setting auth_token cookie');
+      return response;
+    } catch (tokenError) {
+      console.error('Error creating JWT token:', tokenError);
+      return NextResponse.json(
+        { error: 'Authentication error' },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(
-      { error: 'An unexpected error occurred' },
+      { error: 'Error during login' },
       { status: 500 }
     );
   }

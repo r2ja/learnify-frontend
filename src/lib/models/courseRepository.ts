@@ -1,12 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
-import { query, transaction, pool, formatQuery } from '../db';
+import { query, transaction } from '../db';
 import { 
   Course, 
-  CourseCreateInput, 
-  CourseUpdateInput, 
-  CourseWithRelations,
-  User,
-  Assessment
+  CourseCreateInput,
+  User
 } from './types';
 
 export const courseRepository = {
@@ -42,9 +39,9 @@ export const courseRepository = {
     if (userId) {
       sql = `
         SELECT ${fields}, 
-               CASE WHEN cu."A" IS NOT NULL THEN true ELSE false END as "isEnrolled"
+               CASE WHEN ce."userId" IS NOT NULL THEN true ELSE false END as "isEnrolled"
         FROM "Course" c
-        LEFT JOIN "_CourseToUser" cu ON c.id = cu."B" AND cu."A" = $1
+        LEFT JOIN "CourseEnrollment" ce ON c.id = ce."courseId" AND ce."userId" = $1
         ${limitClause}
         ${offsetClause}
       `;
@@ -70,8 +67,8 @@ export const courseRepository = {
   }: { 
     where: { id: string }, 
     select?: Record<string, boolean>,
-    include?: { students?: boolean, assessments?: boolean }
-  }): Promise<CourseWithRelations | null> {
+    include?: { students?: boolean }
+  }): Promise<Course & { students?: User[] } | null> {
     // If select is provided, make sure each column name is properly quoted
     let fields;
     if (select) {
@@ -95,7 +92,7 @@ export const courseRepository = {
       return null;
     }
     
-    const course = courses[0] as CourseWithRelations;
+    const course = courses[0] as Course & { students?: User[] };
     
     // Fetch related data if requested
     if (include) {
@@ -104,24 +101,12 @@ export const courseRepository = {
         const studentsSql = `
           SELECT u.*
           FROM "User" u
-          JOIN "_CourseToUser" cu ON u.id = cu."A"
-          WHERE cu."B" = $1
+          JOIN "CourseEnrollment" ce ON u.id = ce."userId"
+          WHERE ce."courseId" = $1
         `;
         
         const students = await query<User>(studentsSql, [course.id]);
         course.students = students;
-      }
-      
-      // Fetch assessments
-      if (include.assessments) {
-        const assessmentsSql = `
-          SELECT *
-          FROM "Assessment"
-          WHERE "courseId" = $1
-        `;
-        
-        const assessments = await query<Assessment>(assessmentsSql, [course.id]);
-        course.assessments = assessments;
       }
     }
     
@@ -154,7 +139,7 @@ export const courseRepository = {
         "id", 
         "createdAt", 
         "updatedAt",
-        ${fields.map(f => `"${f}"`).join(', ')}
+        ${fields.map(f => `"${String(f)}"`).join(', ')}
       )
       VALUES (
         $1, $2, $3, ${placeholders.join(', ')}
@@ -174,7 +159,7 @@ export const courseRepository = {
     data 
   }: { 
     where: { id: string }, 
-    data: CourseUpdateInput 
+    data: Partial<CourseCreateInput> 
   }): Promise<Course> {
     const { id } = where;
     let updateData = { ...data, updatedAt: new Date() };
@@ -185,7 +170,7 @@ export const courseRepository = {
     }
     
     const fields = Object.keys(updateData) as Array<keyof typeof updateData>;
-    const setClauses = fields.map((field, i) => `"${field}" = $${i + 2}`);
+    const setClauses = fields.map((field, i) => `"${String(field)}" = $${i + 2}`);
     const values = fields.map(field => updateData[field]);
     
     const sql = `
@@ -215,11 +200,17 @@ export const courseRepository = {
     return await transaction(async (client) => {
       const { id } = where;
       
-      // First, delete related junction table records
-      await client.query('DELETE FROM "_CourseToUser" WHERE "B" = $1', [id]);
+      // Delete enrollments
+      await client.query('DELETE FROM "CourseEnrollment" WHERE "courseId" = $1', [id]);
       
-      // Then delete related assessments
-      await client.query('DELETE FROM "Assessment" WHERE "courseId" = $1', [id]);
+      // Delete chapters
+      await client.query('DELETE FROM "Chapter" WHERE "courseId" = $1', [id]);
+      
+      // Delete chat sessions
+      await client.query('DELETE FROM "GeneralQueryChatSession" WHERE "courseId" = $1', [id]);
+      
+      // Delete quiz instances
+      await client.query('DELETE FROM "QuizInstance" WHERE "courseId" = $1', [id]);
       
       // Finally delete the course
       const result = await client.query('DELETE FROM "Course" WHERE "id" = $1 RETURNING *', [id]);
@@ -243,12 +234,12 @@ export const courseRepository = {
     userId: string 
   }): Promise<void> {
     const sql = `
-      INSERT INTO "_CourseToUser" ("A", "B")
+      INSERT INTO "CourseEnrollment" ("courseId", "userId")
       VALUES ($1, $2)
       ON CONFLICT DO NOTHING
     `;
     
-    await query(sql, [userId, courseId]);
+    await query(sql, [courseId, userId]);
   },
   
   /**
@@ -262,10 +253,10 @@ export const courseRepository = {
     userId: string 
   }): Promise<void> {
     const sql = `
-      DELETE FROM "_CourseToUser"
-      WHERE "A" = $1 AND "B" = $2
+      DELETE FROM "CourseEnrollment"
+      WHERE "courseId" = $1 AND "userId" = $2
     `;
     
-    await query(sql, [userId, courseId]);
+    await query(sql, [courseId, userId]);
   }
 }; 

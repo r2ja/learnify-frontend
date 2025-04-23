@@ -1,11 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
-import { query, transaction, pool, formatQuery } from '../db';
+import { query, transaction } from '../db';
 import { 
   User, 
   UserCreateInput, 
-  UserUpdateInput, 
-  UserWithRelations,
-  Course
+  UserSelect,
+  LearningProfile
 } from './types';
 
 export const userRepository = {
@@ -16,34 +15,34 @@ export const userRepository = {
     select, 
     take, 
     skip,
-    where
+    where 
   }: { 
-    select?: Record<string, boolean>, 
+    select?: UserSelect, 
     take?: number, 
     skip?: number,
-    where?: { role?: string }
+    where?: { email?: string }
   } = {}): Promise<User[]> {
     // If select is provided, make sure each column name is properly quoted
     let fields;
     if (select) {
       fields = Object.keys(select)
-        .filter(key => select[key])
+        .filter(key => select[key as keyof UserSelect])
         .map(key => `"${key}"`)
         .join(', ');
     } else {
       fields = '*';
     }
     
+    const limitClause = take ? `LIMIT ${take}` : '';
+    const offsetClause = skip ? `OFFSET ${skip}` : '';
+    
     let whereClause = '';
     const params: any[] = [];
     
-    if (where?.role) {
-      whereClause = 'WHERE "role" = $1';
-      params.push(where.role);
+    if (where?.email) {
+      whereClause = 'WHERE "email" = $1';
+      params.push(where.email);
     }
-    
-    const limitClause = take ? `LIMIT ${take}` : '';
-    const offsetClause = skip ? `OFFSET ${skip}` : '';
     
     const sql = `
       SELECT ${fields}
@@ -53,10 +52,7 @@ export const userRepository = {
       ${offsetClause}
     `;
     
-    console.log('UserRepository.findMany SQL:', sql, 'Params:', params);
-    const users = await query<User>(sql, params);
-    console.log(`UserRepository.findMany - Found ${users.length} users`);
-    return users;
+    return await query<User>(sql, params);
   },
 
   /**
@@ -64,84 +60,31 @@ export const userRepository = {
    */
   async findUnique({ 
     where, 
-    select, 
-    include 
+    select 
   }: { 
-    where: { id?: string, email?: string }, 
-    select?: Record<string, boolean>,
-    include?: { enrolledIn?: boolean, learningProfile?: boolean }
-  }): Promise<UserWithRelations | null> {
+    where: { id: string } | { email: string }, 
+    select?: UserSelect 
+  }): Promise<User | null> {
     // If select is provided, make sure each column name is properly quoted
     let fields;
     if (select) {
       fields = Object.keys(select)
-        .filter(key => select[key])
+        .filter(key => select[key as keyof UserSelect])
         .map(key => `"${key}"`)
         .join(', ');
     } else {
       fields = '*';
     }
     
-    let whereClause = '';
-    const params: any[] = [];
-    
-    if (where.id) {
-      whereClause = 'WHERE "id" = $1';
-      params.push(where.id);
-    } else if (where.email) {
-      whereClause = 'WHERE "email" = $1';
-      params.push(where.email);
-    } else {
-      throw new Error('Either id or email must be provided');
-    }
-    
+    const whereField = 'id' in where ? 'id' : 'email';
     const sql = `
       SELECT ${fields}
       FROM "User"
-      ${whereClause}
+      WHERE "${whereField}" = $1
     `;
     
-    console.log('UserRepository.findUnique SQL:', sql, 'Params:', params);
-    const users = await query<User>(sql, params);
-    console.log(`UserRepository.findUnique - Found ${users.length} users for query:`, whereClause);
-    
-    if (users.length === 0) {
-      return null;
-    }
-    
-    const user = users[0] as UserWithRelations;
-    
-    // Fetch related data if requested
-    if (include) {
-      // Fetch enrolled courses
-      if (include.enrolledIn) {
-        const coursesSql = `
-          SELECT c.*
-          FROM "Course" c
-          JOIN "_CourseToUser" cu ON c."id" = cu."B"
-          WHERE cu."A" = $1
-        `;
-        
-        const courses = await query<Course>(coursesSql, [user.id]);
-        user.enrolledIn = courses;
-      }
-      
-      // Fetch learning profile
-      if (include.learningProfile) {
-        const profileSql = `
-          SELECT *
-          FROM "LearningProfile"
-          WHERE "userId" = $1
-        `;
-        
-        const profiles = await query(profileSql, [user.id]);
-        if (profiles.length > 0) {
-          user.learningProfile = profiles[0];
-        }
-      }
-    }
-    
-    return user;
+    const users = await query<User>(sql, [where[whereField]]);
+    return users.length > 0 ? users[0] : null;
   },
 
   /**
@@ -155,24 +98,32 @@ export const userRepository = {
     const id = uuidv4();
     const now = new Date();
     
-    const fields = Object.keys(data) as Array<keyof UserCreateInput>;
-    const placeholders = fields.map((_, i) => `$${i + 4}`);
-    const values = fields.map(field => data[field]);
-    
     const sql = `
       INSERT INTO "User" (
         "id", 
+        "name", 
+        "email", 
+        "password", 
+        "image", 
+        "language",
         "createdAt", 
-        "updatedAt",
-        ${fields.map(f => `"${f}"`).join(', ')}
+        "updatedAt"
       )
-      VALUES (
-        $1, $2, $3, ${placeholders.join(', ')}
-      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `;
     
-    const users = await query<User>(sql, [id, now, now, ...values]);
+    const users = await query<User>(sql, [
+      id,
+      data.name,
+      data.email,
+      data.password,
+      data.image,
+      data.language || 'english',
+      now,
+      now
+    ]);
+    
     return users[0];
   },
 
@@ -184,7 +135,7 @@ export const userRepository = {
     data 
   }: { 
     where: { id: string }, 
-    data: UserUpdateInput 
+    data: Partial<UserCreateInput> 
   }): Promise<User> {
     const { id } = where;
     const updateData = { ...data, updatedAt: new Date() };
@@ -200,7 +151,6 @@ export const userRepository = {
       RETURNING *
     `;
     
-    console.log('UserRepository.update SQL:', sql, 'Params:', [id, ...values]);
     const users = await query<User>(sql, [id, ...values]);
     
     if (users.length === 0) {
@@ -221,9 +171,13 @@ export const userRepository = {
     return await transaction(async (client) => {
       const { id } = where;
       
-      // First, delete related junction table records
-      await client.query('DELETE FROM "_CourseToUser" WHERE "A" = $1', [id]);
-      await client.query('DELETE FROM "_AssessmentToUser" WHERE "A" = $1', [id]);
+      // First, delete related records
+      await client.query('DELETE FROM "CourseEnrollment" WHERE "userId" = $1', [id]);
+      await client.query('DELETE FROM "LearningProfile" WHERE "userId" = $1', [id]);
+      await client.query('DELETE FROM "QuizInstance" WHERE "userId" = $1', [id]);
+      await client.query('DELETE FROM "QuizResponse" WHERE "userId" = $1', [id]);
+      await client.query('DELETE FROM "ChapterChatSession" WHERE "userId" = $1', [id]);
+      await client.query('DELETE FROM "GeneralQueryChatSession" WHERE "userId" = $1', [id]);
       
       // Then delete the user
       const result = await client.query('DELETE FROM "User" WHERE "id" = $1 RETURNING *', [id]);

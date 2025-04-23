@@ -1,10 +1,3 @@
-// Enum for user roles
-export enum UserRole {
-  STUDENT = 'STUDENT',
-  INSTRUCTOR = 'INSTRUCTOR',
-  ADMIN = 'ADMIN',
-}
-
 // Base interfaces for entities
 export interface BaseEntity {
   id: string;
@@ -18,7 +11,7 @@ export interface User extends BaseEntity {
   email: string;
   password: string | null;
   image: string | null;
-  role: UserRole;
+  language: 'urdu' | 'english' | 'french';
 }
 
 // Learning profile entity
@@ -28,7 +21,6 @@ export interface LearningProfile extends BaseEntity {
   perceptionStyle: string;
   inputStyle: string;
   understandingStyle: string;
-  preferences: string | null; // JSON string in PostgreSQL
   assessmentDate: Date;
 }
 
@@ -39,71 +31,58 @@ export interface Course extends BaseEntity {
   imageUrl: string | null;
   category: string;
   chapters: number;
-  duration: string;
   level: string;
   syllabus: any | null; // JSON in PostgreSQL
 }
 
-// Assessment entity
-export interface Assessment extends BaseEntity {
-  title: string;
+// Chapter entity
+export interface Chapter extends BaseEntity {
+  courseId: string;
+  name: string;
   description: string | null;
-  dueDate: Date | null;
-  courseId: string;
+  content: any; // JSON in PostgreSQL
 }
 
-// Chat entity
-export interface Chat extends BaseEntity {
-  userId: string;
+// ChapterPrompt entity
+export interface ChapterPrompt extends BaseEntity {
+  chapterId: string;
+  prompt: string;
 }
 
-// Message entity
-export interface Message extends BaseEntity {
-  content: string;
-  isUser: boolean;
-  chatId: string;
-}
-
-// Relationship junction tables
-export interface UserCourse {
+// QuizInstance entity
+export interface QuizInstance extends BaseEntity {
   userId: string;
   courseId: string;
+  chapterId: string;
+  context: any; // JSON in PostgreSQL
+  quiz_payload: any; // JSON in PostgreSQL
+  status: string;
 }
 
-export interface UserAssessment {
+// QuizResponse entity
+export interface QuizResponse extends BaseEntity {
+  quizInstanceId: string;
   userId: string;
-  assessmentId: string;
+  answers: any; // JSON in PostgreSQL
+  score: number | null;
+  submittedAt: Date;
 }
 
-// Extended types with relationships
-export interface CourseWithRelations extends Course {
-  students?: User[];
-  assessments?: Assessment[];
+// ChatSession entities
+export interface BaseChatSession extends BaseEntity {
+  userId: string;
+  prompt: string | null;
+  input_type: string;
+  input_payload: any | null; // JSON in PostgreSQL
+  output_payload: any | null; // JSON in PostgreSQL
 }
 
-export interface UserWithRelations extends User {
-  enrolledIn?: Course[];
-  assessments?: Assessment[];
-  chats?: Chat[];
-  learningProfile?: LearningProfile;
+export interface ChapterChatSession extends BaseChatSession {
+  chapterId: string;
 }
 
-export interface AssessmentWithRelations extends Assessment {
-  course?: Course;
-  students?: User[];
-}
-
-export interface ChatWithRelations extends Chat {
-  user?: User;
-  messages?: Message[];
-}
-
-export interface MessageWithRelations extends Message {
-  chat?: Chat;
-}
-
-export interface LearningProfileWithRelations extends LearningProfile {
-  user?: User;
+export interface GeneralQueryChatSession extends BaseChatSession {
+  courseId: string;
 }
 
 // Input types for creation and update
@@ -112,39 +91,26 @@ export type UserCreateInput = {
   email: string;
   password?: string | null;
   image?: string | null;
-  role?: UserRole;
+  language?: 'urdu' | 'english' | 'french';
 };
 
-export type UserUpdateInput = Partial<UserCreateInput>;
-
 export type CourseCreateInput = Omit<Course, 'id' | 'createdAt' | 'updatedAt'>;
-export type CourseUpdateInput = Partial<Omit<Course, 'id' | 'createdAt' | 'updatedAt'>>;
 
-export type AssessmentCreateInput = Omit<Assessment, 'id' | 'createdAt' | 'updatedAt'>;
-export type AssessmentUpdateInput = Partial<Omit<Assessment, 'id' | 'createdAt' | 'updatedAt'>>;
-
-export type ChatCreateInput = Omit<Chat, 'id' | 'createdAt' | 'updatedAt'>;
-export type ChatUpdateInput = Partial<Omit<Chat, 'id' | 'createdAt' | 'updatedAt'>>;
-
-export type MessageCreateInput = Omit<Message, 'id' | 'createdAt' | 'updatedAt'>;
-export type MessageUpdateInput = Partial<Omit<Message, 'id' | 'createdAt' | 'updatedAt'>>;
+export type ChapterCreateInput = Omit<Chapter, 'id' | 'createdAt' | 'updatedAt'>;
 
 export type LearningProfileCreateInput = Omit<LearningProfile, 'id' | 'createdAt' | 'updatedAt'>;
-export type LearningProfileUpdateInput = Partial<Omit<LearningProfile, 'id' | 'createdAt' | 'updatedAt'>>;
 
-// Select fields types (equivalent to Prisma select)
+// Select fields types
 export type UserSelect = {
   id?: boolean;
   name?: boolean;
   email?: boolean;
   password?: boolean;
   image?: boolean;
-  role?: boolean;
+  language?: boolean;
   createdAt?: boolean;
   updatedAt?: boolean;
   enrolledIn?: boolean;
-  assessments?: boolean;
-  chats?: boolean;
   learningProfile?: boolean;
 };
 
@@ -155,11 +121,9 @@ export type CourseSelect = {
   imageUrl?: boolean;
   category?: boolean;
   chapters?: boolean;
-  duration?: boolean;
   level?: boolean;
   syllabus?: boolean;
   createdAt?: boolean;
   updatedAt?: boolean;
   students?: boolean;
-  assessments?: boolean;
 }; 

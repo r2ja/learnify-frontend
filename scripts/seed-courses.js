@@ -1,9 +1,14 @@
 const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config({ path: '.env.local' }); // Make sure dotenv is configured
 
-// Create a PostgreSQL pool
+// Create a PostgreSQL pool with explicit configuration
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'password',
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'frontend_app_db',
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
@@ -281,82 +286,96 @@ const coursesData = [
 ];
 
 async function main() {
-  console.log('Start seeding courses...');
   let client = null;
-  
+
   try {
+    console.log('Seeding courses and chapters...');
     client = await pool.connect();
+
+    // Start transaction
     await client.query('BEGIN');
-    
-    // First, delete existing courses to avoid duplicates
-    await client.query('DELETE FROM "_AssessmentToUser"');
-    await client.query('DELETE FROM "Assessment"');
-    await client.query('DELETE FROM "_CourseToUser"');
-    await client.query('DELETE FROM "Course"');
-    console.log('Cleared existing courses');
-    
-    const courseIds = [];
-    
-    // Then insert the new courses
-    for (const course of coursesData) {
-      const courseId = uuidv4();
-      const now = new Date();
+
+    // Clear existing courses and chapters (optional, but good for idempotency)
+    // Note: CASCADE should handle related chapters if courses are deleted first.
+    // However, explicit deletion might be clearer or necessary depending on exact constraints.
+    await client.query('DELETE FROM public."Chapter"');
+    await client.query('DELETE FROM public."Course"');
+
+    const now = new Date();
+
+    for (const courseData of coursesData) {
+      const courseId = uuidv4(); // Generate text UUID
+
+      // Insert Course
+      const courseInsertQuery = `
+        INSERT INTO public."Course" (id, title, description, "imageUrl", category, chapters, level, syllabus, "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id, title
+      `;
+      const courseValues = [
+        courseId,
+        courseData.title,
+        courseData.description,
+        courseData.imageUrl,
+        courseData.category,
+        courseData.chapters, // Keep the count
+        courseData.level,
+        JSON.stringify(courseData.syllabus), // Keep overview syllabus JSONB
+        now,
+        now
+      ];
       
-      // Convert syllabus to JSON string
-      const syllabus = JSON.stringify(course.syllabus);
-      
-      const result = await client.query(
-        `INSERT INTO "Course" (
-          id, title, description, "imageUrl", category, chapters, 
-          duration, level, syllabus, "createdAt", "updatedAt"
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-        [
-          courseId,
-          course.title,
-          course.description,
-          course.imageUrl,
-          course.category,
-          course.chapters,
-          course.duration,
-          course.level,
-          syllabus,
-          now,
-          now
-        ]
-      );
-      
-      courseIds.push(result.rows[0].id);
-      console.log(`Created course with ID: ${result.rows[0].id}`);
-    }
-    
-    // Get all student users
-    const studentsResult = await client.query(
-      `SELECT id FROM "User" WHERE role = 'STUDENT'`
-    );
-    
-    if (studentsResult.rows.length > 0) {
-      const studentId = studentsResult.rows[0].id;
-      
-      // Enroll the student in all courses
-      for (const courseId of courseIds) {
-        await client.query(
-          `INSERT INTO "_CourseToUser" ("A", "B")
-           VALUES ($1, $2)
-           ON CONFLICT DO NOTHING`,
-          [courseId, studentId]
-        );
-        console.log(`Enrolled student ${studentId} in course ${courseId}`);
+      const courseResult = await client.query(courseInsertQuery, courseValues);
+      console.log(`Inserted course: ${courseResult.rows[0].title} (ID: ${courseId})`);
+
+      // Insert Chapters from syllabus
+      if (courseData.syllabus && courseData.syllabus.chapters) {
+        for (const chapterData of courseData.syllabus.chapters) {
+          const chapterId = uuidv4(); // Generate text UUID for chapter
+          const chapterInsertQuery = `
+            INSERT INTO public."Chapter" (id, "courseId", name, description, content, "createdAt", "updatedAt")
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `;
+          // Store the whole chapter object from syllabus in the 'content' JSONB field
+          const chapterContentJson = JSON.stringify({
+            title: chapterData.title, // Keep title accessible at top level if needed
+            content: chapterData.content,
+            readings: chapterData.readings,
+            exercises: chapterData.exercises
+          });
+
+          const chapterValues = [
+            chapterId,
+            courseId, // Link to the course we just inserted
+            chapterData.title, // Use title as chapter name
+            chapterData.content, // Use content as chapter description (or modify as needed)
+            chapterContentJson, // Store original chapter details in content JSONB
+            now,
+            now
+          ];
+          
+          await client.query(chapterInsertQuery, chapterValues);
+          // console.log(`  - Inserted chapter: ${chapterData.title} (ID: ${chapterId})`); // Optional logging
+        }
+        console.log(`  - Inserted ${courseData.syllabus.chapters.length} chapters for course ${courseResult.rows[0].title}`);
+      } else {
+         console.log(`  - No chapters found in syllabus for course ${courseResult.rows[0].title}`);
       }
     }
-    
+
+    // Commit transaction
     await client.query('COMMIT');
-    console.log('Seeding completed successfully');
+
+    console.log('Courses and chapters seeding completed successfully!');
   } catch (error) {
+    // Rollback transaction on error
     if (client) {
       await client.query('ROLLBACK');
     }
-    console.error('Error during seeding:', error);
+    console.error('Error seeding courses and chapters:', error);
+    process.exit(1); // Exit with error code
   } finally {
+    // Release client and close pool
     if (client) {
       client.release();
     }
@@ -364,8 +383,7 @@ async function main() {
   }
 }
 
-main()
-  .catch(e => {
-    console.error(e);
-    process.exit(1);
-  }); 
+main().catch((e) => {
+  console.error('Unhandled error in main execution:', e);
+  process.exit(1);
+}); 

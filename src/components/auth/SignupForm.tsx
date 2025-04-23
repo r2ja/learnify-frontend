@@ -4,12 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { FormField } from './FormField';
-import { useAuth } from './AuthContext';
 
-export function SignupForm() {
+export default function SignupForm() {
   const router = useRouter();
-  const { login } = useAuth();
-  
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -87,7 +84,7 @@ export function SignupForm() {
     // Reset errors
     setError('');
     setFieldErrors({});
-    
+
     // Validate form before submission
     if (!validateForm()) {
       return;
@@ -102,13 +99,14 @@ export function SignupForm() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Important for cookies to be sent/received
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
           password: formData.password,
         }),
       });
-      
+
       let data;
       try {
         // Safely parse the JSON response
@@ -118,7 +116,7 @@ export function SignupForm() {
         console.error('JSON parse error:', jsonError);
         throw new Error('Server returned an invalid response. This might indicate a database connection issue.');
       }
-      
+
       if (!response.ok) {
         // Handle specific database connection errors
         if (data.error && data.error.includes('database')) {
@@ -126,9 +124,6 @@ export function SignupForm() {
         }
         throw new Error(data.error || 'Registration failed');
       }
-      
-      // Set user data in auth context
-      login(data.user);
       
       // Navigate to the assessment page after signup
       router.push('/assessment');

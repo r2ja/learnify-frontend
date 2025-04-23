@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LoginForm } from '@/components/auth/LoginForm';
+import LoginForm from '@/components/auth/LoginForm';
 import { useEffect } from 'react';
 import { AnimatedSidebar } from '@/components/auth/AnimatedSidebar';
 

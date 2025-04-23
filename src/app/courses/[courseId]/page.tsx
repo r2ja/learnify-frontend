@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useAuth } from '@/components/auth/AuthContext';
 
 interface SyllabusItem {
   title: string;
@@ -24,7 +25,7 @@ interface CourseDetails {
   imageUrl?: string;
   category: string;
   chapters: number;
-  duration: string;
+  duration?: string;
   level: string;
   syllabus?: SyllabusData | SyllabusItem[] | any;
   isEnrolled?: boolean;
@@ -34,6 +35,7 @@ export default function CourseDetailPage() {
   const { courseId } = useParams();
   const router = useRouter();
   const { showToast } = useToast();
+  const { user, isAuthenticated } = useAuth();
   const [course, setCourse] = useState<CourseDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +46,14 @@ export default function CourseDetailPage() {
     const fetchCourse = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/courses/${courseId}`);
+        let url = `/api/courses/${courseId}`;
+        
+        // If user is authenticated, add userId to check enrollment status
+        if (user?.id) {
+          url = `/api/courses/${courseId}?userId=${user.id}`;
+        }
+        
+        const response = await fetch(url);
         
         if (!response.ok) {
           throw new Error('Failed to fetch course details');
@@ -97,41 +106,46 @@ export default function CourseDetailPage() {
     if (courseId) {
       fetchCourse();
     }
-  }, [courseId]);
+  }, [courseId, user?.id]);
 
   const handleEnroll = async () => {
     if (!course) return;
     
+    if (!isAuthenticated) {
+      showToast('error', 'Please log in to enroll in this course');
+      router.push('/auth/login');
+      return;
+    }
+    
     try {
       setEnrolling(true);
       
-      // Get the student user ID from the database
-      const userResponse = await fetch('/api/users?role=STUDENT');
-      
-      if (!userResponse.ok) {
-        throw new Error('Failed to fetch user data');
+      if (!user?.id) {
+        throw new Error('User is not authenticated');
       }
-      
-      const users = await userResponse.json();
-      
-      if (!users || users.length === 0) {
-        throw new Error('No student users found in the database');
-      }
-      
-      // Use the first student user
-      const userId = users[0].id;
-      console.log('Enrolling user with ID:', userId);
       
       const response = await fetch(`/api/courses/${courseId}/enroll`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId: user.id }),
       });
       
       if (!response.ok) {
         const errorData = await response.json();
+        // If user is already enrolled, just redirect to the first chapter
+        if (errorData.error && errorData.error.includes('already enrolled')) {
+          setCourse(prevCourse => ({
+            ...prevCourse!,
+            isEnrolled: true
+          }));
+          showToast('info', 'You are already enrolled in this course');
+          setTimeout(() => {
+            router.push(`/courses/${courseId}/chapters/1`);
+          }, 1000);
+          return;
+        }
         throw new Error(errorData.error || `Failed to enroll: ${response.statusText}`);
       }
       
@@ -147,9 +161,9 @@ export default function CourseDetailPage() {
       // Show success message
       showToast('success', 'Successfully enrolled in course!');
       
-      // Redirect to dashboard after a short delay
+      // Redirect to first chapter after a short delay
       setTimeout(() => {
-        router.push('/dashboard');
+        router.push(`/courses/${courseId}/chapters/1`);
       }, 1500);
     } catch (err) {
       console.error('Error enrolling in course:', err);
@@ -157,6 +171,10 @@ export default function CourseDetailPage() {
     } finally {
       setEnrolling(false);
     }
+  };
+
+  const handleStartLearning = () => {
+    router.push(`/courses/${courseId}/chapters/1`);
   };
 
   if (loading) {
@@ -189,7 +207,7 @@ export default function CourseDetailPage() {
           <div className="flex flex-wrap gap-4 text-sm">
             <div className="bg-white/20 px-3 py-1 rounded-full">{course.category}</div>
             <div className="bg-white/20 px-3 py-1 rounded-full">{course.level}</div>
-            <div className="bg-white/20 px-3 py-1 rounded-full">{course.duration}</div>
+            <div className="bg-white/20 px-3 py-1 rounded-full">{course.duration || '10 hours'}</div>
           </div>
         </div>
 
@@ -211,7 +229,7 @@ export default function CourseDetailPage() {
                     <div key={idx} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
-                          <div className="bg-[var(--primary)] bg-opacity-10 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-[var(--primary)]">
+                          <div className="bg-[var(--primary)] rounded-full w-8 h-8 flex items-center justify-center mr-3 text-white">
                             {idx + 1}
                           </div>
                           <span className="font-medium">{chapter.title}</span>
@@ -243,7 +261,7 @@ export default function CourseDetailPage() {
                       {/* Show exercises count if available */}
                       {chapter.exercises && (
                         <div className="mt-2 ml-11">
-                          <span className="text-xs font-semibold bg-[var(--primary)] bg-opacity-10 text-[var(--primary)] px-2 py-1 rounded-full">
+                          <span className="text-xs font-semibold bg-[var(--primary)] text-white px-2 py-1 rounded-full">
                             {chapter.exercises} exercises
                           </span>
                         </div>
@@ -252,47 +270,82 @@ export default function CourseDetailPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500">No syllabus information available.</p>
+                <p className="text-gray-500">Syllabus information is not available for this course.</p>
               )}
             </div>
           </div>
 
           {/* Sidebar */}
-          <div>
-            <div className="bg-white rounded-xl shadow-sm p-6 sticky top-6">
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-xl shadow-sm p-6 sticky top-24">
+              {course.imageUrl && (
+                <img 
+                  src={course.imageUrl} 
+                  alt={course.title} 
+                  className="w-full h-40 object-cover rounded-lg mb-4"
+                />
+              )}
+              
+              <h3 className="text-lg font-bold mb-2">{course.title}</h3>
+              <div className="flex items-center gap-2 text-sm text-gray-600 mb-6">
+                <span>{course.level}</span>
+                <span>•</span>
+                <span>{course.chapters} chapter{course.chapters !== 1 ? 's' : ''}</span>
+              </div>
+              
               {course.isEnrolled ? (
-                <button 
-                  onClick={() => router.push('/dashboard')}
-                  className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors mb-4"
+                <button
+                  onClick={handleStartLearning}
+                  className="w-full py-3 font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-sm transition-colors"
                 >
                   Continue Learning
                 </button>
               ) : (
-                <button 
+                <button
                   onClick={handleEnroll}
                   disabled={enrolling}
-                  className="w-full py-3 px-4 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white rounded-lg font-medium transition-colors mb-4"
+                  className="w-full py-3 font-semibold text-white bg-[var(--primary)] hover:bg-opacity-90 rounded-lg shadow-sm transition-colors disabled:opacity-70"
                 >
                   {enrolling ? 'Enrolling...' : 'Enroll in Course'}
                 </button>
               )}
               
-              <div className="border-t pt-4 mt-4">
-                <h3 className="font-semibold mb-2">Course Details</h3>
-                <ul className="space-y-2 text-sm">
-                  <li className="flex justify-between">
-                    <span className="text-gray-600">Lectures</span>
-                    <span className="font-medium">{course.chapters}</span>
-                  </li>
-                  <li className="flex justify-between">
-                    <span className="text-gray-600">Duration</span>
-                    <span className="font-medium">{course.duration}</span>
-                  </li>
-                  <li className="flex justify-between">
-                    <span className="text-gray-600">Level</span>
-                    <span className="font-medium">{course.level}</span>
-                  </li>
-                </ul>
+              <div className="mt-6 space-y-3">
+                <div className="flex items-start">
+                  <div className="mt-1 text-[var(--primary)]">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-semibold">Self-paced Learning</h4>
+                    <p className="text-xs text-gray-600">Learn at your own pace with 24/7 access</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <div className="mt-1 text-[var(--primary)]">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-semibold">AI-Powered Support</h4>
+                    <p className="text-xs text-gray-600">Get personalized help with our AI assistant</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <div className="mt-1 text-[var(--primary)]">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-semibold">Interactive Content</h4>
+                    <p className="text-xs text-gray-600">Engage with quizzes and exercises</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -17,14 +17,19 @@ async function resetDatabase() {
     await client.query('BEGIN');
 
     // Delete data from all tables in the correct order (respecting foreign key constraints)
-    await client.query('DELETE FROM "Message"');
-    await client.query('DELETE FROM "Chat"');
-    await client.query('DELETE FROM "_AssessmentToUser"');
-    await client.query('DELETE FROM "Assessment"');
-    await client.query('DELETE FROM "_CourseToUser"');
-    await client.query('DELETE FROM "Course"');
-    await client.query('DELETE FROM "LearningProfile"');
-    await client.query('DELETE FROM "User"');
+    // Start with tables referencing others
+    await client.query('DELETE FROM public."ChapterChatSession"');
+    await client.query('DELETE FROM public."GeneralQueryChatSession"');
+    await client.query('DELETE FROM public."QuizResponse"');
+    await client.query('DELETE FROM public."QuizInstance"'); // References Chapter, User, Course
+    await client.query('DELETE FROM public."ChapterPrompt"'); // References Chapter
+    await client.query('DELETE FROM public."Chapter"'); // References Course
+    await client.query('DELETE FROM public."CourseEnrollment"'); // References User, Course
+    await client.query('DELETE FROM public."LearningProfile"'); // References User
+
+    // Finally, delete from the core tables
+    await client.query('DELETE FROM public."User"');
+    await client.query('DELETE FROM public."Course"');
     
     // Commit transaction
     await client.query('COMMIT');

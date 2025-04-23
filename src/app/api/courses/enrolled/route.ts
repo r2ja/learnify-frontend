@@ -29,9 +29,9 @@ export async function GET(request: Request) {
       SELECT 
         c.*,
         true as "isEnrolled"
-      FROM "_CourseToUser" cu
-      INNER JOIN "Course" c ON cu."A" = c.id
-      WHERE cu."B" = $1
+      FROM "CourseEnrollment" ce
+      INNER JOIN "Course" c ON ce."courseId" = c.id
+      WHERE ce."userId" = $1
       ORDER BY c."createdAt" DESC
     `;
 
@@ -47,7 +47,6 @@ export async function GET(request: Request) {
       imageUrl: course.imageUrl,
       category: course.category,
       chapters: course.chapters,
-      duration: course.duration,
       level: course.level,
       syllabus: course.syllabus,
       isEnrolled: true,

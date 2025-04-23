@@ -52,7 +52,7 @@ export async function POST(
 
     // Check if user is already enrolled
     const enrollmentCheck = await query(
-      'SELECT * FROM "_CourseToUser" WHERE "A" = $1 AND "B" = $2',
+      'SELECT * FROM "CourseEnrollment" WHERE "courseId" = $1 AND "userId" = $2',
       [courseId, userId]
     );
 
@@ -65,7 +65,7 @@ export async function POST(
 
     // Enroll the user in the course
     await query(
-      'INSERT INTO "_CourseToUser" ("A", "B") VALUES ($1, $2)',
+      'INSERT INTO "CourseEnrollment" ("courseId", "userId") VALUES ($1, $2)',
       [courseId, userId]
     );
 
