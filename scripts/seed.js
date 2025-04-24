@@ -33,11 +33,9 @@ async function main() {
     // --- Clean Slate (Optional but Recommended for Idempotency) ---
     // Delete in reverse order of dependency
     console.log('Clearing existing test data...');
-    await client.query('DELETE FROM public."ChapterChatSession"');
     await client.query('DELETE FROM public."GeneralQueryChatSession"');
     await client.query('DELETE FROM public."QuizResponse"');
     await client.query('DELETE FROM public."QuizInstance"');
-    await client.query('DELETE FROM public."ChapterPrompt"');
     await client.query('DELETE FROM public."Chapter"');
     await client.query('DELETE FROM public."CourseEnrollment"');
     await client.query('DELETE FROM public."LearningProfile"');

@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { BookOpen, Clock, Award, ChevronRight, PlayCircle, Users, BarChart } from 'lucide-react';
 import { useUser } from '@/lib/hooks/useUser';
 import { toast } from 'react-hot-toast';
+import { Button } from '@/components/ui/button';
 
 // Types
 interface Chapter {
@@ -43,6 +44,7 @@ export function CourseDetail({ courseId }: { courseId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [enrolling, setEnrolling] = useState(false);
+  const [continuing, setContinuing] = useState(false);
 
   useEffect(() => {
     const fetchCourse = async () => {
@@ -107,6 +109,27 @@ export function CourseDetail({ courseId }: { courseId: string }) {
       toast.error(err instanceof Error ? err.message : 'Failed to enroll in course. Please try again.');
     } finally {
       setEnrolling(false);
+    }
+  };
+
+  const handleContinueLearning = async () => {
+    if (!user?.id) {
+      toast.error('Please log in to continue learning');
+      return;
+    }
+    
+    try {
+      // Show loading toast
+      toast.loading('Opening chat...');
+      
+      // Directly navigate to the chat with the course ID
+      router.push(`/chat?courseId=${courseId}`);
+      
+      // Dismiss toast after navigation starts
+      toast.dismiss();
+    } catch (err) {
+      console.error('Error navigating to chat:', err);
+      toast.error('Could not open chat. Please try again.');
     }
   };
 
@@ -246,13 +269,26 @@ export function CourseDetail({ courseId }: { courseId: string }) {
                 </div>
               </div>
               
-              <button 
-                onClick={handleEnroll}
-                disabled={enrolling} 
-                className="w-full py-3 bg-[var(--primary)] text-white font-medium rounded-md hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {enrolling ? 'Enrolling...' : 'Enroll in this Course'}
-              </button>
+              {/* Course buttons section */}
+              {user && course.isEnrolled ? (
+                <div className="flex flex-col sm:flex-row gap-4 mt-8">
+                  <Button
+                    onClick={handleContinueLearning}
+                    className="w-full sm:w-auto bg-[var(--primary)] text-white hover:opacity-90 px-6 py-3"
+                  >
+                    Continue Learning
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-8">
+                  <Button
+                    onClick={handleEnroll}
+                    className="w-full sm:w-auto bg-[var(--primary)] text-white hover:opacity-90 px-6 py-3"
+                  >
+                    Enroll in Course
+                  </Button>
+                </div>
+              )}
             </div>
           )}
           
@@ -299,13 +335,12 @@ export function CourseDetail({ courseId }: { courseId: string }) {
               </div>
               
               <div className="mt-8">
-                <button 
+                <Button
                   onClick={handleEnroll}
-                  disabled={enrolling} 
-                  className="w-full py-3 bg-[var(--primary)] text-white font-medium rounded-md hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto bg-[var(--primary)] text-white hover:opacity-90 px-6 py-3"
                 >
-                  {enrolling ? 'Enrolling...' : 'Enroll in this Course'}
-                </button>
+                  Enroll in Course
+                </Button>
               </div>
             </div>
           )}

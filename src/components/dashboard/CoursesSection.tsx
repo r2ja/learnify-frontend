@@ -315,6 +315,24 @@ export default function CoursesSection() {
     setIsModalOpen(false);
   };
 
+  const handleContinueLearning = async (courseId: string) => {
+    try {
+      if (!user?.id) {
+        showToast('error', 'Please log in to continue learning');
+        return;
+      }
+      
+      // Show loading toast
+      showToast('info', 'Opening chat...');
+      
+      // Directly navigate to the chat with the course ID
+      router.push(`/chat?courseId=${courseId}`);
+    } catch (error) {
+      console.error('Error navigating to chat:', error);
+      showToast('error', 'Could not open chat. Please try again.');
+    }
+  };
+
   const handleEnroll = async (courseId: string) => {
     try {
       setEnrolling(true);
@@ -531,7 +549,10 @@ export default function CoursesSection() {
                   <div className="flex items-center relative">
                     <button 
                       className="py-2 px-4 rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-300 text-sm mr-2"
-                      onClick={() => router.push(`/courses/${course.id}`)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleContinueLearning(course.id);
+                      }}
                     >
                       Continue Learning
                     </button>

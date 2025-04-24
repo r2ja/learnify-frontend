@@ -18,11 +18,9 @@ async function resetDatabase() {
 
     // Delete data from all tables in the correct order (respecting foreign key constraints)
     // Start with tables referencing others
-    await client.query('DELETE FROM public."ChapterChatSession"');
     await client.query('DELETE FROM public."GeneralQueryChatSession"');
     await client.query('DELETE FROM public."QuizResponse"');
     await client.query('DELETE FROM public."QuizInstance"'); // References Chapter, User, Course
-    await client.query('DELETE FROM public."ChapterPrompt"'); // References Chapter
     await client.query('DELETE FROM public."Chapter"'); // References Course
     await client.query('DELETE FROM public."CourseEnrollment"'); // References User, Course
     await client.query('DELETE FROM public."LearningProfile"'); // References User

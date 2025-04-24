@@ -176,7 +176,6 @@ export const userRepository = {
       await client.query('DELETE FROM "LearningProfile" WHERE "userId" = $1', [id]);
       await client.query('DELETE FROM "QuizInstance" WHERE "userId" = $1', [id]);
       await client.query('DELETE FROM "QuizResponse" WHERE "userId" = $1', [id]);
-      await client.query('DELETE FROM "ChapterChatSession" WHERE "userId" = $1', [id]);
       await client.query('DELETE FROM "GeneralQueryChatSession" WHERE "userId" = $1', [id]);
       
       // Then delete the user

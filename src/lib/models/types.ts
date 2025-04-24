@@ -43,12 +43,6 @@ export interface Chapter extends BaseEntity {
   content: any; // JSON in PostgreSQL
 }
 
-// ChapterPrompt entity
-export interface ChapterPrompt extends BaseEntity {
-  chapterId: string;
-  prompt: string;
-}
-
 // QuizInstance entity
 export interface QuizInstance extends BaseEntity {
   userId: string;
@@ -75,10 +69,6 @@ export interface BaseChatSession extends BaseEntity {
   input_type: string;
   input_payload: any | null; // JSON in PostgreSQL
   output_payload: any | null; // JSON in PostgreSQL
-}
-
-export interface ChapterChatSession extends BaseChatSession {
-  chapterId: string;
 }
 
 export interface GeneralQueryChatSession extends BaseChatSession {

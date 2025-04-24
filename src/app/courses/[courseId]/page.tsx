@@ -177,6 +177,25 @@ export default function CourseDetailPage() {
     router.push(`/courses/${courseId}/chapters/1`);
   };
 
+  const handleContinueLearning = async () => {
+    if (!isAuthenticated) {
+      showToast('error', 'Please log in to continue learning');
+      router.push('/auth/login');
+      return;
+    }
+    
+    try {
+      // Show loading indicator
+      showToast('info', 'Opening chat...');
+      
+      // Directly navigate to the chat with the course ID
+      router.push(`/chat?courseId=${courseId}`);
+    } catch (error) {
+      console.error('Error navigating to chat:', error);
+      showToast('error', 'Could not open chat. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <MainLayout>
@@ -294,19 +313,27 @@ export default function CourseDetailPage() {
               </div>
               
               {course.isEnrolled ? (
-                <button
-                  onClick={handleStartLearning}
-                  className="w-full py-3 font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-sm transition-colors"
-                >
-                  Continue Learning
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={handleContinueLearning}
+                    className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-all duration-300"
+                  >
+                    Continue Learning
+                  </button>
+                  <button
+                    onClick={handleStartLearning}
+                    className="px-6 py-3 border border-[var(--primary)] text-[var(--primary)] bg-white rounded-lg hover:bg-[var(--primary-light)] transition-all duration-300"
+                  >
+                    View All Chapters
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={handleEnroll}
                   disabled={enrolling}
-                  className="w-full py-3 font-semibold text-white bg-[var(--primary)] hover:bg-opacity-90 rounded-lg shadow-sm transition-colors disabled:opacity-70"
+                  className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-all duration-300 disabled:opacity-70 disabled:pointer-events-none"
                 >
-                  {enrolling ? 'Enrolling...' : 'Enroll in Course'}
+                  {enrolling ? 'Enrolling...' : 'Enroll Now'}
                 </button>
               )}
               
