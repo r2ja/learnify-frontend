@@ -1,0 +1,61 @@
+// Chat System Models
+model UserLearningProfile {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @db.Uuid
+  style            String   @default("conceptual") @db.VarChar(50)
+  depth            String   @default("beginner") @db.VarChar(50)
+  interaction      String   @default("examples") @db.VarChar(50)
+  preferredLanguage String   @default("english") @db.VarChar(10)
+  createdAt        DateTime @default(now()) @db.Timestamptz
+  updatedAt        DateTime @updatedAt @db.Timestamptz
+
+  // Relations
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CourseChat {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  courseId        String   @db.Uuid
+  virtualChapterId String?  @db.Uuid
+  title           String?  @db.VarChar(255)
+  customTitle     String?  @db.VarChar(255)
+  language        String   @default("english") @db.VarChar(10)
+  learningProfile Json     @default("{ \"style\": \"conceptual\", \"depth\": \"beginner\", \"interaction\": \"examples\" }")
+  lastContext     String?  @db.Text
+  metadata        Json?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  virtualChapter  VirtualChapter? @relation(fields: [virtualChapterId], references: [id], onDelete: SetNull)
+  messages        ChatMessage[]
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([virtualChapterId])
+  @@index([createdAt])
+}
+
+model ChatMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  chatId      String   @db.Uuid
+  content     String   @db.Text
+  messageType String   @default("text") @db.VarChar(20)
+  isUser      Boolean  @default(false)
+  reasoning   String?  @db.Text
+  metadata    Json?
+  order       Int
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  // Relations
+  chat        CourseChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@index([order])
+  @@index([messageType])
+} 

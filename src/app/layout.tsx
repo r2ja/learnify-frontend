@@ -3,6 +3,7 @@ import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from '@/components/auth/AuthContext';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { ThemeProvider } from '@/components/ui/ThemeProvider';
 
 const inter = Inter({ subsets: ["latin"] });
 const playfair = Playfair_Display({ 
@@ -26,7 +27,9 @@ export default function RootLayout({
       <body className={`${inter.className} w-full h-full m-0 p-0`}>
         <AuthProvider>
           <ToastProvider>
-            {children}
+            <ThemeProvider>
+              {children}
+            </ThemeProvider>
           </ToastProvider>
         </AuthProvider>
       </body>
