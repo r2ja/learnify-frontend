@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, FC } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Paperclip, Send, Smile } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Paperclip, Send, Smile, Edit2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from './Message';
 import { ChatHistory } from './ChatHistory';
@@ -113,11 +113,15 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   const [responseComplete, setResponseComplete] = useState(false);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [currentConversationTitle, setCurrentConversationTitle] = useState<string>("New Chat");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState("");
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
   
   const messageContainerRef = useRef<HTMLDivElement>(null);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const courseDropdownRef = useRef<HTMLDivElement>(null);
   const moduleDropdownRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -341,6 +345,14 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         }
       ]);
     }
+
+    // Refresh the chat history to show the updated list
+    triggerHistoryRefresh();
+  };
+
+  // Helper to trigger a refresh of chat history
+  const triggerHistoryRefresh = () => {
+    setHistoryRefreshTrigger(prev => prev + 1);
   };
 
   // Load a specific chat
@@ -400,6 +412,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       const data = await response.json();
       if (!currentConversationId) {
         setCurrentConversationId(data.conversationId);
+        // Refresh chat history when a new conversation is created
+        triggerHistoryRefresh();
       }
       
       console.log('Conversation saved successfully');
@@ -501,6 +515,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           const words = firstUserMessage.split(' ').slice(0, 5).join(' ');
           const title = words.length > 30 ? words.substring(0, 30) + '...' : words;
           setCurrentConversationTitle(title);
+          // No need to trigger refresh here as saveMessages will do it when creating the new conversation
         }
       }
     } else if (data.type === 'error') {
@@ -640,6 +655,72 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     return botResponses[Math.floor(Math.random() * botResponses.length)];
   };
 
+  // Update conversation title
+  const updateConversationTitle = async (newTitle: string) => {
+    if (!user || !selectedCourse || !selectedModule || !currentConversationId) return;
+    
+    try {
+      const response = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          courseId: selectedCourse.id,
+          moduleId: selectedModule.id,
+          conversationId: currentConversationId,
+          messages: messages,
+          title: newTitle
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update conversation title');
+      }
+      
+      const data = await response.json();
+      setCurrentConversationTitle(data.title);
+      
+      // Refresh the chat history to show the updated title
+      triggerHistoryRefresh();
+      
+      console.log('Conversation title updated successfully');
+    } catch (error) {
+      console.error('Error updating conversation title:', error);
+    }
+  };
+
+  // Start title editing
+  const startTitleEdit = () => {
+    setTitleInput(currentConversationTitle);
+    setIsEditingTitle(true);
+    setTimeout(() => {
+      if (titleInputRef.current) {
+        titleInputRef.current.focus();
+        titleInputRef.current.select();
+      }
+    }, 50);
+  };
+
+  // Save title edit
+  const saveTitleEdit = () => {
+    const newTitle = titleInput.trim();
+    if (newTitle) {
+      setCurrentConversationTitle(newTitle);
+      updateConversationTitle(newTitle);
+    }
+    setIsEditingTitle(false);
+  };
+
+  // Handle title input key press
+  const handleTitleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      saveTitleEdit();
+    } else if (e.key === 'Escape') {
+      setIsEditingTitle(false);
+    }
+  };
+
   return (
     <div className="relative flex h-full w-full overflow-hidden">
       <BackgroundPaths />
@@ -723,6 +804,45 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
               {isHistoryOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </button>
           </header>
+
+          {/* Conversation Title - only show when a conversation is active and not in initial state */}
+          {!isInitialState && currentConversationId && (
+            <div className="px-4 py-2 border-b border-gray-100 flex items-center">
+              {isEditingTitle ? (
+                <div className="flex items-center flex-1">
+                  <input
+                    ref={titleInputRef}
+                    type="text"
+                    value={titleInput}
+                    onChange={(e) => setTitleInput(e.target.value)}
+                    onKeyDown={handleTitleKeyPress}
+                    onBlur={saveTitleEdit}
+                    className="px-2 py-1 border border-gray-300 rounded-md flex-1 mr-2 text-sm font-medium"
+                    maxLength={50}
+                  />
+                  <button 
+                    onClick={saveTitleEdit}
+                    className="p-1 rounded-md bg-[var(--primary)] text-white"
+                  >
+                    <Check size={16} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center flex-1">
+                  <h3 className="text-sm font-medium text-gray-700 flex-1 truncate pr-2">
+                    {currentConversationTitle}
+                  </h3>
+                  <button
+                    onClick={startTitleEdit}
+                    className="p-1 text-gray-500 hover:text-[var(--primary)] rounded-md hover:bg-gray-100"
+                    title="Rename conversation"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Chat Body */}
           <div className="flex-1 overflow-y-auto" ref={messageContainerRef}>
@@ -841,6 +961,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
               onSelectChat={(id) => loadChat(id)}
               onNewChat={createNewChat}
               currentChatId={currentConversationId}
+              refreshTrigger={historyRefreshTrigger}
             />
           )}
         </div>

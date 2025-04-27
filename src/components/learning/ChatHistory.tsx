@@ -1,5 +1,5 @@
 import React, { FC, useEffect, useState } from 'react';
-import { Clock, Search, Plus } from 'lucide-react';
+import { Clock, Search, Plus, RefreshCw } from 'lucide-react';
 
 interface ConversationItem {
   id: string;
@@ -14,6 +14,7 @@ interface ChatHistoryProps {
   onSelectChat: (id: string) => void;
   onNewChat: () => void;
   currentChatId: string | null;
+  refreshTrigger?: number;
 }
 
 export const ChatHistory: FC<ChatHistoryProps> = ({ 
@@ -21,21 +22,29 @@ export const ChatHistory: FC<ChatHistoryProps> = ({
   moduleId, 
   onSelectChat, 
   onNewChat,
-  currentChatId
+  currentChatId,
+  refreshTrigger = 0
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [internalRefreshTrigger, setInternalRefreshTrigger] = useState(0);
 
-  // Fetch conversation history when course or module changes
+  // Combine the external and internal refresh triggers
+  const combinedRefreshTrigger = refreshTrigger + internalRefreshTrigger;
+
+  // Fetch conversation history when course, module, or refreshTrigger changes
   useEffect(() => {
     const fetchConversations = async () => {
       if (!courseId || !moduleId) return;
       
       setIsLoading(true);
+      setIsRefreshing(true);
       try {
+        // Add cache-busting parameter to force fresh data
         const response = await fetch(
-          `/api/conversations?courseId=${courseId}&moduleId=${moduleId}&listOnly=true`
+          `/api/conversations?courseId=${courseId}&moduleId=${moduleId}&listOnly=true&_t=${Date.now()}`
         );
         
         if (response.ok) {
@@ -48,11 +57,18 @@ export const ChatHistory: FC<ChatHistoryProps> = ({
         console.error('Error fetching conversations:', error);
       } finally {
         setIsLoading(false);
+        setIsRefreshing(false);
       }
     };
     
     fetchConversations();
-  }, [courseId, moduleId]);
+  }, [courseId, moduleId, combinedRefreshTrigger]); // Use combined trigger
+
+  // Handle manual refresh
+  const handleRefresh = () => {
+    if (isRefreshing) return; // Prevent multiple refreshes
+    setInternalRefreshTrigger(prev => prev + 1);
+  };
 
   // Filter conversations based on search term
   const filteredConversations = conversations.filter(chat => 
@@ -62,7 +78,17 @@ export const ChatHistory: FC<ChatHistoryProps> = ({
   return (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-white/10">
-        <h2 className="text-xl font-bold mb-4">Chat History</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">Chat History</h2>
+          <button 
+            onClick={handleRefresh}
+            className={`p-2 rounded-full hover:bg-white/10 transition-all ${isRefreshing ? 'animate-spin' : ''}`}
+            title="Refresh chat history"
+            disabled={isRefreshing}
+          >
+            <RefreshCw size={18} className="text-white/80" />
+          </button>
+        </div>
         
         {/* Search */}
         <div className="relative">
@@ -88,7 +114,7 @@ export const ChatHistory: FC<ChatHistoryProps> = ({
       
       {/* Chat List */}
       <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
+        {isLoading && conversations.length === 0 ? (
           <div className="flex justify-center items-center h-40">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white/60"></div>
           </div>
