@@ -301,7 +301,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
 
   // Save messages to database
   const saveMessages = async () => {
-    if (!user || !selectedCourse || messages.length === 0 || isSavingConversation) return;
+    if (!user || !selectedCourse || !selectedModule || messages.length === 0 || isSavingConversation) return;
     
     try {
       setIsSavingConversation(true);
@@ -314,6 +314,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         },
         body: JSON.stringify({
           courseId: selectedCourse.id,
+          moduleId: selectedModule.id,
           messages: messages
         })
       });
@@ -330,13 +331,13 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     }
   };
 
-  // Load previous messages when course changes
+  // Load previous messages when course or module changes
   useEffect(() => {
     const loadConversation = async () => {
-      if (!user || !selectedCourse) return;
+      if (!user || !selectedCourse || !selectedModule) return;
       
       try {
-        const response = await fetch(`/api/conversations?courseId=${selectedCourse.id}`);
+        const response = await fetch(`/api/conversations?courseId=${selectedCourse.id}&moduleId=${selectedModule.id}`);
         
         if (response.ok) {
           const data = await response.json();
@@ -344,6 +345,41 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
             setMessages(data.messages);
             setIsInitialState(false);
+          } else {
+            // No existing conversation for this module, show default welcome messages
+            let welcomeMessage = "Hi there! I'm your AI learning assistant. How can I help you today?";
+            
+            if (selectedCourse && selectedModule) {
+              welcomeMessage = `Welcome to ${selectedCourse.title}! I'm your AI tutor and I'll guide you through the learning material for ${selectedModule.title}. Feel free to ask me any questions about the topic.`;
+              
+              // Course-specific content message
+              const contentMessage: ChatMessage = {
+                id: '2',
+                content: `Let's start by understanding the key concepts in ${selectedModule.title}. What specific aspect would you like to explore first?`,
+                isUser: false,
+                accentColor: "var(--primary)",
+              };
+    
+              setMessages([
+                {
+                  id: '1',
+                  content: welcomeMessage,
+                  isUser: false,
+                  accentColor: "var(--primary)",
+                },
+                contentMessage
+              ]);
+            } else {
+              setMessages([
+                {
+                  id: '1',
+                  content: welcomeMessage,
+                  isUser: false,
+                  accentColor: "var(--primary)",
+                }
+              ]);
+            }
+            setIsInitialState(true);
           }
         }
       } catch (error) {
@@ -352,7 +388,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     };
     
     loadConversation();
-  }, [user, selectedCourse]);
+  }, [user, selectedCourse, selectedModule]);
 
   // Save messages when complete
   useEffect(() => {
@@ -527,11 +563,17 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     setSelectedModule(course.modules[0]);
     setIsCourseDropdownOpen(false);
     setSessionId(uuidv4()); // Create a new session ID for the new course
+    // Clear messages - they will be loaded in the useEffect
+    setMessages([]);
+    setIsInitialState(true);
   };
 
   const handleModuleChange = (module: Module) => {
     setSelectedModule(module);
     setIsModuleDropdownOpen(false);
+    // Clear messages - they will be loaded in the useEffect
+    setMessages([]);
+    setIsInitialState(true);
   };
 
   const getRandomResponse = () => {

@@ -40,22 +40,22 @@ export async function POST(request: Request) {
     }
 
     // Get data from the request body
-    const { courseId, messages } = await request.json();
+    const { courseId, moduleId, messages } = await request.json();
 
-    if (!courseId || !messages) {
+    if (!courseId || !moduleId || !messages) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // Check if a conversation exists for this user and course
+    // Check if a conversation exists for this user, course, and module
     const existingConversationSql = `
       SELECT id FROM "Conversations"
-      WHERE "userId" = $1 AND "courseId" = $2
+      WHERE "userId" = $1 AND "courseId" = $2 AND "moduleId" = $3
     `;
 
-    const existingConversations = await query(existingConversationSql, [userId, courseId]);
+    const existingConversations = await query(existingConversationSql, [userId, courseId, moduleId]);
     
     let result;
     
@@ -64,20 +64,20 @@ export async function POST(request: Request) {
       const updateSql = `
         UPDATE "Conversations"
         SET "messages" = $1, "updatedAt" = NOW()
-        WHERE "userId" = $2 AND "courseId" = $3
+        WHERE "userId" = $2 AND "courseId" = $3 AND "moduleId" = $4
         RETURNING id
       `;
       
-      result = await query(updateSql, [JSON.stringify(messages), userId, courseId]);
+      result = await query(updateSql, [JSON.stringify(messages), userId, courseId, moduleId]);
     } else {
       // Create a new conversation
       const insertSql = `
-        INSERT INTO "Conversations" ("userId", "courseId", "messages")
-        VALUES ($1, $2, $3)
+        INSERT INTO "Conversations" ("userId", "courseId", "moduleId", "messages")
+        VALUES ($1, $2, $3, $4)
         RETURNING id
       `;
       
-      result = await query(insertSql, [userId, courseId, JSON.stringify(messages)]);
+      result = await query(insertSql, [userId, courseId, moduleId, JSON.stringify(messages)]);
     }
 
     return NextResponse.json({
@@ -121,21 +121,22 @@ export async function GET(request: Request) {
     // Get query parameters
     const { searchParams } = new URL(request.url);
     const courseId = searchParams.get('courseId');
+    const moduleId = searchParams.get('moduleId');
 
-    if (!courseId) {
+    if (!courseId || !moduleId) {
       return NextResponse.json(
-        { error: 'Course ID is required' },
+        { error: 'Course ID and Module ID are required' },
         { status: 400 }
       );
     }
 
-    // Get conversation for this user and course
+    // Get conversation for this user, course, and module
     const conversationSql = `
       SELECT * FROM "Conversations"
-      WHERE "userId" = $1 AND "courseId" = $2
+      WHERE "userId" = $1 AND "courseId" = $2 AND "moduleId" = $3
     `;
 
-    const conversations = await query(conversationSql, [userId, courseId]);
+    const conversations = await query(conversationSql, [userId, courseId, moduleId]);
 
     if (conversations.length === 0) {
       return NextResponse.json({ messages: [] });
