@@ -42,6 +42,13 @@ interface DBCourse {
   syllabus?: any;
 }
 
+interface LearningProfile {
+  processingStyle: string;
+  perceptionStyle: string;
+  inputStyle: string;
+  understandingStyle: string;
+}
+
 interface CourseChatWindowProps {
   courseId?: string;
   chapterId?: string;
@@ -116,6 +123,15 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState("");
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
+  
+  // Add state for learning profile and user language
+  const [userLanguage, setUserLanguage] = useState<string>("english");
+  const [learningProfile, setLearningProfile] = useState<LearningProfile>({
+    processingStyle: "Active",
+    perceptionStyle: "Intuitive",
+    inputStyle: "Visual",
+    understandingStyle: "Sequential"
+  });
   
   const messageContainerRef = useRef<HTMLDivElement>(null);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
@@ -562,19 +578,27 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       }
 
     if (socket && socket.readyState === WebSocket.OPEN) {
-      // Prepare data to send - use non-null assertion since we've already checked user exists
+      // Prepare data to send
       const messageData = {
         message: message,
-        user_id: user!.id,
-        course_id: selectedCourse.id,
-        chapter_id: selectedModule.id,
+        user_id: user.id,
+        // Send course name instead of ID
+        course_name: selectedCourse.title,
+        // Send chapter/module name instead of ID
+        chapter_name: selectedModule.title,
         session_id: sessionId,
-        language: 'english',
-        learning_profile: {
-          style: 'conceptual',
-          depth: 'beginner',
-          interaction: 'examples'
-        }
+        language: userLanguage,
+        // Send the entire conversation history for context
+        messages: messages.map(msg => ({
+          content: msg.content,
+          isUser: msg.isUser
+        })),
+        // Send the user's learning profile fields explicitly
+        // These should match the fields in your learning_profile database table
+        processingStyle: learningProfile.processingStyle,
+        perceptionStyle: learningProfile.perceptionStyle,
+        inputStyle: learningProfile.inputStyle,
+        understandingStyle: learningProfile.understandingStyle
       };
       
       // Log the outgoing message
@@ -720,6 +744,43 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       setIsEditingTitle(false);
     }
   };
+
+  // Fetch the user's learning profile when the component loads
+  useEffect(() => {
+    if (loadingUser || !user) return;
+    
+    const fetchUserLearningProfile = async () => {
+      try {
+        // Fetch the user's learning profile
+        const response = await fetch(`/api/users/${user.id}/learning-profile`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Update learning profile if it exists
+          if (data && data.profile) {
+            setLearningProfile({
+              processingStyle: data.profile.processingStyle || "Active",
+              perceptionStyle: data.profile.perceptionStyle || "Intuitive",
+              inputStyle: data.profile.inputStyle || "Visual",
+              understandingStyle: data.profile.understandingStyle || "Sequential"
+            });
+          }
+          
+          // Set user language if available
+          if (data.language) {
+            setUserLanguage(data.language);
+          }
+          
+          console.log("Loaded user learning profile:", data);
+        }
+      } catch (error) {
+        console.error("Error fetching user learning profile:", error);
+      }
+    };
+    
+    fetchUserLearningProfile();
+  }, [user, loadingUser]);
 
   return (
     <div className="relative flex h-full w-full overflow-hidden">
