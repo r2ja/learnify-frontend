@@ -71,9 +71,6 @@ export interface BaseChatSession extends BaseEntity {
   output_payload: any | null; // JSON in PostgreSQL
 }
 
-export interface GeneralQueryChatSession extends BaseChatSession {
-  courseId: string;
-}
 
 // Input types for creation and update
 export type UserCreateInput = {

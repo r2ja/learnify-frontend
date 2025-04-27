@@ -109,6 +109,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
+  const [isSavingConversation, setIsSavingConversation] = useState(false);
+  const [responseComplete, setResponseComplete] = useState(false);
   
   const messageContainerRef = useRef<HTMLDivElement>(null);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
@@ -141,8 +143,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       try {
         console.log(`Fetching enrolled courses for user: ${user!.id}`);
         const response = await fetch(`/api/courses/enrolled?userId=${user!.id}`);
-        
-        if (!response.ok) {
+    
+    if (!response.ok) {
           throw new Error('Failed to fetch enrolled courses');
         }
         
@@ -167,22 +169,22 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
               
               if (Array.isArray(chapters) && chapters.length > 0) {
                 modules = chapters.map((chapter: any, index: number) => ({
-                  id: `${course.id}-chapter-${index}`,
+            id: `${course.id}-chapter-${index}`,
                   title: chapter.title || `Chapter ${index + 1}`
                 }));
               }
             }
           } catch (err) {
             console.error('Error parsing course chapters:', err);
-          }
-          
-          return {
-            id: course.id,
-            title: course.title,
-            modules: modules
-          };
-        });
+        }
         
+        return {
+          id: course.id,
+          title: course.title,
+            modules: modules
+        };
+      });
+      
         console.log('Transformed courses:', transformedCourses);
         setAvailableCourses(transformedCourses);
         
@@ -192,8 +194,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           setSelectedModule(transformedCourses[0].modules[0]);
         }
         
-      } catch (error) {
-        console.error('Error fetching enrolled courses:', error);
+    } catch (error) {
+      console.error('Error fetching enrolled courses:', error);
         // Set some sample courses for fallback
         setAvailableCourses([
           {
@@ -259,7 +261,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         isUser: false,
         accentColor: "var(--primary)",
       };
-      
+
       setMessages([
         {
           id: '1',
@@ -288,7 +290,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
 
   // Scroll to bottom when messages change
   useEffect(() => {
-    scrollToBottom();
+      scrollToBottom();
   }, [messages]);
 
   const scrollToBottom = () => {
@@ -296,6 +298,69 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       endOfMessagesRef.current.scrollIntoView({ behavior: "smooth" });
     }
   };
+
+  // Save messages to database
+  const saveMessages = async () => {
+    if (!user || !selectedCourse || messages.length === 0 || isSavingConversation) return;
+    
+    try {
+      setIsSavingConversation(true);
+      
+      console.log('Saving conversation...');
+      const response = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          courseId: selectedCourse.id,
+          messages: messages
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to save conversation');
+      }
+      
+      console.log('Conversation saved successfully');
+    } catch (error) {
+      console.error('Error saving conversation:', error);
+    } finally {
+      setIsSavingConversation(false);
+    }
+  };
+
+  // Load previous messages when course changes
+  useEffect(() => {
+    const loadConversation = async () => {
+      if (!user || !selectedCourse) return;
+      
+      try {
+        const response = await fetch(`/api/conversations?courseId=${selectedCourse.id}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+            setMessages(data.messages);
+            setIsInitialState(false);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading conversation:', error);
+      }
+    };
+    
+    loadConversation();
+  }, [user, selectedCourse]);
+
+  // Save messages when complete
+  useEffect(() => {
+    if (responseComplete && !isLoading && messages.length > 0) {
+      saveMessages();
+      setResponseComplete(false);
+    }
+  }, [responseComplete, isLoading, messages]);
 
   const handleWebSocketMessage = (data: any) => {
     if (data.type === 'text') {
@@ -339,6 +404,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     } else if (data.type === 'complete') {
       // Response is complete
       setIsLoading(false);
+      setResponseComplete(true); // Mark response as complete to trigger saving
     } else if (data.type === 'error') {
       // Handle error
       setMessages(prev => [
@@ -351,6 +417,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         }
       ]);
       setIsLoading(false);
+      setResponseComplete(true); // Save even on error
     }
   };
 
@@ -378,8 +445,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           accentColor: "red",
         }
       ]);
-      return;
-    }
+        return;
+      }
 
     if (socket && socket.readyState === WebSocket.OPEN) {
       // Prepare data to send - use non-null assertion since we've already checked user exists
@@ -518,31 +585,31 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
               {/* Module Selector - only show if a course is selected */}
               {selectedCourse && selectedModule && (
                 <div className="relative inline-block mt-1" ref={moduleDropdownRef}>
-                  <button 
+                <button 
                     onClick={() => setIsModuleDropdownOpen(!isModuleDropdownOpen)}
-                    className="flex items-center gap-1 text-sm text-gray-600 hover:text-[var(--primary)] transition-colors"
-                  >
+                  className="flex items-center gap-1 text-sm text-gray-600 hover:text-[var(--primary)] transition-colors"
+                >
                     Module: {selectedModule.title}
                     <ChevronDown size={14} className={`transition-transform ${isModuleDropdownOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  
+                </button>
+                
                   {isModuleDropdownOpen && (
-                    <div className="absolute left-0 mt-1 w-56 rounded-md shadow-lg bg-white z-30 border border-gray-200">
+                  <div className="absolute left-0 mt-1 w-56 rounded-md shadow-lg bg-white z-30 border border-gray-200">
                       <div className="py-1 max-h-60 overflow-y-auto">
                         {selectedCourse.modules.map(module => (
-                          <button
+                        <button
                             key={module.id}
                             className={`block w-full text-left px-4 py-2 text-sm ${module.id === selectedModule.id ? 'bg-gray-100 text-[var(--primary)]' : 'text-gray-700'} hover:bg-gray-50`}
                             onClick={() => handleModuleChange(module)}
                           >
                             {module.title}
-                          </button>
-                        ))}
+                        </button>
+                      ))}
                       </div>
                     </div>
                   )}
-                </div>
-              )}
+                  </div>
+                )}
             </div>
             
             {/* Chat History Toggle */}
@@ -582,7 +649,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                   </motion.h2>
 
                   {selectedCourse && (
-                    <SuggestedQuestions 
+                  <SuggestedQuestions 
                       questions={suggestedQuestions} 
                       onQuestionClick={handleSendMessage} 
                     />
@@ -611,8 +678,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
-                      </div>
-                    </div>
+                  </div>
+                </div>
                   )}
                   
                   <div ref={endOfMessagesRef} />
@@ -648,7 +715,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
               <button
                 className={`p-2 rounded-lg flex items-center justify-center ${
                   inputMessage.trim() && selectedCourse
-                    ? 'bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)]' 
+                  ? 'bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)]' 
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                 onClick={() => handleSendMessage()}
                 disabled={!inputMessage.trim() || isLoading || !selectedCourse}
@@ -666,8 +733,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           }`}
         >
           <ChatHistory chats={chatHistory} />
-        </div>
-      </div>
+              </div>
+                          </div>
     </div>
   );
 }
