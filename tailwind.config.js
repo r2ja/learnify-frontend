@@ -56,7 +56,30 @@ module.exports = {
         'sidebar': '#111827', // Dark sidebar color
         'content': '#f9fafb', // Light content background
       },
+      typography: {
+        DEFAULT: {
+          css: {
+            maxWidth: 'none',
+            code: {
+              backgroundColor: '#f3f4f6',
+              padding: '0.2em 0.4em',
+              borderRadius: '0.25rem',
+              fontWeight: '400',
+            },
+            'code::before': {
+              content: '""',
+            },
+            'code::after': {
+              content: '""',
+            },
+            'pre code': {
+              backgroundColor: 'transparent',
+              padding: '0',
+            },
+          },
+        },
+      },
     },
   },
-  plugins: [],
+  plugins: [require('@tailwindcss/typography')],
 } 
