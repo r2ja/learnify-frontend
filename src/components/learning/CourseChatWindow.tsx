@@ -111,6 +111,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [isSavingConversation, setIsSavingConversation] = useState(false);
   const [responseComplete, setResponseComplete] = useState(false);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [currentConversationTitle, setCurrentConversationTitle] = useState<string>("New Chat");
   
   const messageContainerRef = useRef<HTMLDivElement>(null);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
@@ -299,6 +301,76 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     }
   };
 
+  // Create a new chat
+  const createNewChat = () => {
+    // Clear messages and use default welcome messages
+    setMessages([]);
+    setCurrentConversationId(null);
+    setCurrentConversationTitle("New Chat");
+    setIsInitialState(true);
+    
+    const welcomeMessage = selectedCourse && selectedModule 
+      ? `Welcome to ${selectedCourse.title}! I'm your AI tutor and I'll guide you through the learning material for ${selectedModule.title}. Feel free to ask me any questions about the topic.` 
+      : "Hi there! I'm your AI learning assistant. How can I help you today?";
+    
+    if (selectedCourse && selectedModule) {
+      // Course-specific content message
+      const contentMessage: ChatMessage = {
+        id: '2',
+        content: `Let's start by understanding the key concepts in ${selectedModule.title}. What specific aspect would you like to explore first?`,
+        isUser: false,
+        accentColor: "var(--primary)",
+      };
+
+      setMessages([
+        {
+          id: '1',
+          content: welcomeMessage,
+          isUser: false,
+          accentColor: "var(--primary)",
+        },
+        contentMessage
+      ]);
+    } else {
+      setMessages([
+        {
+          id: '1',
+          content: welcomeMessage,
+          isUser: false,
+          accentColor: "var(--primary)",
+        }
+      ]);
+    }
+  };
+
+  // Load a specific chat
+  const loadChat = async (conversationId: string) => {
+    if (!user || !selectedCourse || !selectedModule) return;
+    
+    try {
+      setIsLoading(true);
+      const response = await fetch(
+        `/api/conversations?courseId=${selectedCourse.id}&moduleId=${selectedModule.id}&conversationId=${conversationId}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.messages) {
+          setMessages(data.messages);
+          setCurrentConversationId(data.id);
+          setCurrentConversationTitle(data.title);
+          setIsInitialState(false);
+        }
+      } else {
+        console.error('Failed to load conversation');
+      }
+    } catch (error) {
+      console.error('Error loading conversation:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Save messages to database
   const saveMessages = async () => {
     if (!user || !selectedCourse || !selectedModule || messages.length === 0 || isSavingConversation) return;
@@ -315,12 +387,19 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         body: JSON.stringify({
           courseId: selectedCourse.id,
           moduleId: selectedModule.id,
-          messages: messages
+          conversationId: currentConversationId,
+          messages: messages,
+          title: currentConversationTitle || "Chat - " + new Date().toLocaleString()
         })
       });
       
       if (!response.ok) {
         throw new Error('Failed to save conversation');
+      }
+      
+      const data = await response.json();
+      if (!currentConversationId) {
+        setCurrentConversationId(data.conversationId);
       }
       
       console.log('Conversation saved successfully');
@@ -342,48 +421,19 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         if (response.ok) {
           const data = await response.json();
           
-          if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+          if (data && data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
             setMessages(data.messages);
+            setCurrentConversationId(data.id);
+            setCurrentConversationTitle(data.title || "Chat");
             setIsInitialState(false);
           } else {
             // No existing conversation for this module, show default welcome messages
-            let welcomeMessage = "Hi there! I'm your AI learning assistant. How can I help you today?";
-            
-            if (selectedCourse && selectedModule) {
-              welcomeMessage = `Welcome to ${selectedCourse.title}! I'm your AI tutor and I'll guide you through the learning material for ${selectedModule.title}. Feel free to ask me any questions about the topic.`;
-              
-              // Course-specific content message
-              const contentMessage: ChatMessage = {
-                id: '2',
-                content: `Let's start by understanding the key concepts in ${selectedModule.title}. What specific aspect would you like to explore first?`,
-                isUser: false,
-                accentColor: "var(--primary)",
-              };
-    
-              setMessages([
-                {
-                  id: '1',
-                  content: welcomeMessage,
-                  isUser: false,
-                  accentColor: "var(--primary)",
-                },
-                contentMessage
-              ]);
-            } else {
-              setMessages([
-                {
-                  id: '1',
-                  content: welcomeMessage,
-                  isUser: false,
-                  accentColor: "var(--primary)",
-                }
-              ]);
-            }
-            setIsInitialState(true);
+            createNewChat();
           }
         }
       } catch (error) {
         console.error('Error loading conversation:', error);
+        createNewChat();
       }
     };
     
@@ -441,6 +491,18 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       // Response is complete
       setIsLoading(false);
       setResponseComplete(true); // Mark response as complete to trigger saving
+      
+      // If this is the first user message, update the title with the first few words
+      if (currentConversationId === null) {
+        const userMessages = messages.filter(m => m.isUser);
+        if (userMessages.length === 1) {
+          const firstUserMessage = userMessages[0].content;
+          // Use the first 5 words or 30 characters as the title
+          const words = firstUserMessage.split(' ').slice(0, 5).join(' ');
+          const title = words.length > 30 ? words.substring(0, 30) + '...' : words;
+          setCurrentConversationTitle(title);
+        }
+      }
     } else if (data.type === 'error') {
       // Handle error
       setMessages(prev => [
@@ -563,17 +625,15 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     setSelectedModule(course.modules[0]);
     setIsCourseDropdownOpen(false);
     setSessionId(uuidv4()); // Create a new session ID for the new course
-    // Clear messages - they will be loaded in the useEffect
-    setMessages([]);
-    setIsInitialState(true);
+    setCurrentConversationId(null); // Reset current conversation
+    // Messages will be loaded or initialized in the useEffect
   };
 
   const handleModuleChange = (module: Module) => {
     setSelectedModule(module);
     setIsModuleDropdownOpen(false);
-    // Clear messages - they will be loaded in the useEffect
-    setMessages([]);
-    setIsInitialState(true);
+    setCurrentConversationId(null); // Reset current conversation
+    // Messages will be loaded or initialized in the useEffect
   };
 
   const getRandomResponse = () => {
@@ -774,9 +834,17 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
             isHistoryOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
-          <ChatHistory chats={chatHistory} />
-              </div>
-                          </div>
+          {selectedCourse && selectedModule && (
+            <ChatHistory 
+              courseId={selectedCourse.id}
+              moduleId={selectedModule.id}
+              onSelectChat={(id) => loadChat(id)}
+              onNewChat={createNewChat}
+              currentChatId={currentConversationId}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

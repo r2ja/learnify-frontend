@@ -1,54 +1,129 @@
-import { FC } from 'react';
+import React, { FC, useEffect, useState } from 'react';
+import { Clock, Search, Plus } from 'lucide-react';
 
-interface ChatItem {
+interface ConversationItem {
   id: string;
   title: string;
-  date: string;
-  courseId?: string;
-  virtualChapterId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface ChatHistoryProps {
-  chats: ChatItem[];
-  onSelectChat?: (chatId: string) => void;
-  isLoading?: boolean;
+  courseId: string;
+  moduleId: string;
+  onSelectChat: (id: string) => void;
+  onNewChat: () => void;
+  currentChatId: string | null;
 }
 
 export const ChatHistory: FC<ChatHistoryProps> = ({ 
-  chats, 
-  onSelectChat,
-  isLoading = false 
+  courseId, 
+  moduleId, 
+  onSelectChat, 
+  onNewChat,
+  currentChatId
 }) => {
-  return (
-    <div className="w-full h-full flex flex-col p-4">
-      <h2 className="text-xl font-bold text-white mb-4">Chat History</h2>
+  const [searchTerm, setSearchTerm] = useState('');
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch conversation history when course or module changes
+  useEffect(() => {
+    const fetchConversations = async () => {
+      if (!courseId || !moduleId) return;
       
-      {isLoading ? (
-        <div className="flex justify-center items-center h-40">
-          <div className="flex space-x-2">
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
+      setIsLoading(true);
+      try {
+        const response = await fetch(
+          `/api/conversations?courseId=${courseId}&moduleId=${moduleId}&listOnly=true`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          setConversations(data.conversations || []);
+        } else {
+          console.error('Failed to fetch conversations');
+        }
+      } catch (error) {
+        console.error('Error fetching conversations:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchConversations();
+  }, [courseId, moduleId]);
+
+  // Filter conversations based on search term
+  const filteredConversations = conversations.filter(chat => 
+    chat.title.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="p-4 border-b border-white/10">
+        <h2 className="text-xl font-bold mb-4">Chat History</h2>
+        
+        {/* Search */}
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search conversations..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-white/10 border border-white/20 rounded-lg py-2 pl-10 pr-4 text-white placeholder-white/50"
+          />
+          <Search className="absolute left-3 top-2.5 text-white/60" size={18} />
+        </div>
+        
+        {/* New Chat Button */}
+        <button
+          onClick={onNewChat}
+          className="flex items-center justify-center gap-2 w-full mt-3 mb-2 bg-white text-[var(--primary)] rounded-lg py-2 font-medium hover:bg-white/90 transition-colors"
+        >
+          <Plus size={18} />
+          New Chat
+        </button>
+      </div>
+      
+      {/* Chat List */}
+      <div className="flex-1 overflow-y-auto">
+        {isLoading ? (
+          <div className="flex justify-center items-center h-40">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white/60"></div>
           </div>
-        </div>
-      ) : chats.length > 0 ? (
-        <div className="overflow-y-auto flex-1">
-          {chats.map((chat) => (
-            <div 
-              key={chat.id}
-              onClick={() => onSelectChat && onSelectChat(chat.id)}
-              className="p-3 mb-2 bg-white/10 rounded-lg cursor-pointer hover:bg-white/20 transition-colors"
-            >
-              <div className="text-sm font-medium text-white">{chat.title}</div>
-              <div className="text-xs text-white/60">{chat.date}</div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-white/70 text-sm">No chat history found</p>
-        </div>
-      )}
+        ) : filteredConversations.length > 0 ? (
+          <div className="p-2">
+            {filteredConversations.map((chat) => (
+              <button
+                key={chat.id}
+                onClick={() => onSelectChat(chat.id)}
+                className={`w-full text-left p-3 rounded-lg mb-2 flex items-start hover:bg-white/10 transition-colors ${
+                  currentChatId === chat.id ? 'bg-white/10' : ''
+                }`}
+              >
+                <div className="flex-1 truncate">
+                  <h3 className="font-medium truncate">{chat.title}</h3>
+                  <div className="flex items-center text-xs text-white/60 mt-1">
+                    <Clock size={12} className="mr-1" />
+                    {new Date(chat.updatedAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-40 text-white/60">
+            <p className="text-center px-4">No conversations found</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
