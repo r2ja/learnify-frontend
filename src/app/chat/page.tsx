@@ -11,7 +11,7 @@ export default function ChatPage() {
 
   return (
     <MainLayout>
-      <div className="w-full flex-1 flex overflow-hidden">
+      <div className="h-screen w-full flex-1">
         <CourseChatWindow courseId={courseId || undefined} chapterId={chapterId || undefined} />
       </div>
     </MainLayout>

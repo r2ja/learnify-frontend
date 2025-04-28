@@ -1,30 +1,24 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-// Remove static import
-// import mermaid from 'mermaid';
+import mermaid from 'mermaid';
 
-// Initialize mermaid only on client side
-let mermaid: any;
+// Only initialize if no global init exists
+// Since we can't directly check mermaid.initialized, use a try/catch approach
 if (typeof window !== 'undefined') {
-  // Dynamic import
-  import('mermaid').then((m) => {
-    mermaid = m.default;
-    try {
-      // Initialize with settings that suppress error SVGs
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: 'default',
-        securityLevel: 'loose',
-        fontFamily: 'inherit',
-        logLevel: 1
-      });
-    } catch (e) {
-      console.warn("Mermaid may already be initialized");
-    }
-  }).catch(err => {
-    console.error("Failed to load mermaid library:", err);
-  });
+  try {
+    // Initialize with settings that suppress error SVGs
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'loose',
+      fontFamily: 'inherit',
+      logLevel: 1,
+      suppressErrorRendering: true
+    });
+  } catch (e) {
+    console.warn("Mermaid may already be initialized");
+  }
 }
 
 interface MermaidDiagramProps {
@@ -49,31 +43,6 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
     }
 
     const renderDiagram = async () => {
-      // Check if mermaid is loaded
-      if (!mermaid) {
-        // Wait for mermaid to load
-        const waitForMermaid = async () => {
-          let attempts = 0;
-          const maxAttempts = 10;
-          
-          while (!mermaid && attempts < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            attempts++;
-          }
-          
-          if (!mermaid) {
-            setError("Failed to load Mermaid library");
-            setIsLoading(false);
-            return false;
-          }
-          
-          return true;
-        };
-        
-        const loaded = await waitForMermaid();
-        if (!loaded) return;
-      }
-
       try {
         // Apply fixes even before first rendering attempt
         // Special characters need to be handled proactively

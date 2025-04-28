@@ -822,11 +822,11 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   }, [user, loadingUser]);
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden flex-col">
+    <div className="relative flex h-full w-full overflow-hidden">
       <BackgroundPaths />
       <ConnectionStatus isConnected={isConnected} />
       
-      <div className="w-full h-full flex z-10 flex-1 overflow-hidden">
+      <div className="w-full h-full flex z-10">
         <div 
           className={`flex-1 flex flex-col h-full bg-[var(--background)] ${isHistoryOpen ? 'mr-[320px]' : ''} transition-all duration-300`}
         >
@@ -945,7 +945,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           )}
 
           {/* Chat Body */}
-          <div className="flex-1 overflow-y-auto h-0" ref={messageContainerRef}>
+          <div className="flex-1 overflow-y-auto" ref={messageContainerRef}>
             <AnimatePresence mode="wait">
               {isInitialState ? (
                 <motion.div

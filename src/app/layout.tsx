@@ -36,7 +36,8 @@ export default function RootLayout({
                 theme: 'default',
                 securityLevel: 'loose',
                 fontFamily: 'inherit',
-                logLevel: 1
+                logLevel: 1,
+                suppressErrorRendering: true
               });
             }).catch(err => console.error('Error loading mermaid:', err));
           }
