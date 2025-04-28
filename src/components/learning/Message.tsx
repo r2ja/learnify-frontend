@@ -1,4 +1,5 @@
-import { FC, useEffect, useState } from 'react';
+import { FC } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 interface MessageProps {
   content: string;
@@ -13,53 +14,28 @@ export const Message: FC<MessageProps> = ({
   accentColor = 'var(--primary)',
   isMarkdown = false
 }) => {
-  const [formattedContent, setFormattedContent] = useState<string>(content);
-
-  // Apply basic formatting for code blocks and formatting
-  useEffect(() => {
-    if (isMarkdown) {
-      // Simple regex-based markdown formatting for client-side
-      let formatted = content
-        // Format code blocks
-        .replace(/```([a-z]*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
-        // Format inline code
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        // Format bold
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        // Format italic
-        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-        // Format links
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-500 underline">$1</a>')
-        // Format lists
-        .replace(/^\s*-\s+(.+)$/gm, '<li>$1</li>')
-        // Convert newlines to breaks
-        .replace(/\n/g, '<br />');
-      
-      setFormattedContent(formatted);
-    }
-  }, [content, isMarkdown]);
-
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-center'} mb-4 px-4 sm:px-8 md:px-12 lg:px-20`}>
       {!isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-md bg-[var(--primary)] text-white flex items-center justify-center mr-3 mt-0.5">
-          <span className="text-sm font-semibold">L</span>
+        <div className="flex-shrink-0 w-9 h-9 rounded-md bg-[var(--primary)] text-white flex items-center justify-center mr-3 mt-0.5">
+          <span className="text-base font-semibold">L</span>
         </div>
       )}
       
       <div 
-        className={`relative max-w-[70%] py-3 px-4 rounded-lg ${
+        className={`relative max-w-[90%] sm:max-w-[80%] md:max-w-[70%] lg:max-w-[65%] py-4 px-5 rounded-lg ${
           isUser 
             ? 'bg-[var(--primary)] text-white' 
             : 'bg-gray-100 text-gray-800'
         }`}
       >
-        <div className={`text-sm ${!isMarkdown ? 'whitespace-pre-wrap' : 'prose prose-sm max-w-none'}`}>
+        <div className={`text-base ${!isMarkdown ? 'whitespace-pre-wrap' : ''}`}>
           {isMarkdown ? (
-            <div 
-              className="prose prose-sm max-w-none prose-pre:bg-gray-200 prose-pre:text-gray-800 prose-pre:p-2 prose-pre:rounded-md"
-              dangerouslySetInnerHTML={{ __html: formattedContent }}
-            />
+            <div className="prose prose-base max-w-none prose-headings:font-bold prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-hr:my-4 prose-ul:pl-5 prose-ol:pl-5">
+              <ReactMarkdown>
+                {content}
+              </ReactMarkdown>
+            </div>
           ) : (
             content
           )}
@@ -67,8 +43,8 @@ export const Message: FC<MessageProps> = ({
       </div>
       
       {isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center ml-3 mt-0.5">
-          <span className="text-sm font-semibold">U</span>
+        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center ml-3 mt-0.5">
+          <span className="text-base font-semibold">U</span>
         </div>
       )}
     </div>

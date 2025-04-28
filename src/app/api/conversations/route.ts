@@ -197,4 +197,35 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
+}
+
+// DELETE /api/conversations?id=conversationId
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const conversationId = url.searchParams.get('id');
+    
+    if (!conversationId) {
+      return NextResponse.json({ error: 'Conversation ID is required' }, { status: 400 });
+    }
+    
+    console.log(`DELETE /api/conversations - Deleting conversation: ${conversationId}`);
+    
+    // Check if the conversation exists
+    const checkQuery = `SELECT id FROM "Conversations" WHERE id = $1`;
+    const conversations = await query(checkQuery, [conversationId]);
+    
+    if (!Array.isArray(conversations) || conversations.length === 0) {
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+    }
+    
+    // Delete the conversation
+    const deleteQuery = `DELETE FROM "Conversations" WHERE id = $1`;
+    await query(deleteQuery, [conversationId]);
+    
+    return NextResponse.json({ success: true }, { status: 200 });
+  } catch (error) {
+    console.error('Error deleting conversation:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 } 

@@ -1,5 +1,5 @@
 import React, { FC, useEffect, useState } from 'react';
-import { Clock, Search, Plus, RefreshCw } from 'lucide-react';
+import { Clock, Search, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
 interface ConversationItem {
   id: string;
@@ -30,6 +30,7 @@ export const ChatHistory: FC<ChatHistoryProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [internalRefreshTrigger, setInternalRefreshTrigger] = useState(0);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   // Combine the external and internal refresh triggers
   const combinedRefreshTrigger = refreshTrigger + internalRefreshTrigger;
@@ -68,6 +69,39 @@ export const ChatHistory: FC<ChatHistoryProps> = ({
   const handleRefresh = () => {
     if (isRefreshing) return; // Prevent multiple refreshes
     setInternalRefreshTrigger(prev => prev + 1);
+  };
+
+  // Handle conversation deletion
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // Prevent triggering the parent button's onClick
+    
+    if (window.confirm('Are you sure you want to delete this conversation?')) {
+      setIsDeleting(id);
+      
+      try {
+        const response = await fetch(`/api/conversations?id=${id}`, {
+          method: 'DELETE',
+        });
+        
+        if (response.ok) {
+          // If the current chat was deleted, trigger a new chat
+          if (currentChatId === id) {
+            onNewChat();
+          }
+          
+          // Refresh the conversation list
+          setInternalRefreshTrigger(prev => prev + 1);
+        } else {
+          console.error('Failed to delete conversation');
+          alert('Failed to delete conversation. Please try again.');
+        }
+      } catch (error) {
+        console.error('Error deleting conversation:', error);
+        alert('An error occurred while deleting the conversation.');
+      } finally {
+        setIsDeleting(null);
+      }
+    }
   };
 
   // Filter conversations based on search term
@@ -121,27 +155,45 @@ export const ChatHistory: FC<ChatHistoryProps> = ({
         ) : filteredConversations.length > 0 ? (
           <div className="p-2">
             {filteredConversations.map((chat) => (
-              <button
+              <div 
                 key={chat.id}
-                onClick={() => onSelectChat(chat.id)}
-                className={`w-full text-left p-3 rounded-lg mb-2 flex items-start hover:bg-white/10 transition-colors ${
+                className={`w-full text-left p-3 rounded-lg mb-2 flex items-start hover:bg-white/10 transition-colors group ${
                   currentChatId === chat.id ? 'bg-white/10' : ''
                 }`}
               >
-                <div className="flex-1 truncate">
-                  <h3 className="font-medium truncate">{chat.title}</h3>
-                  <div className="flex items-center text-xs text-white/60 mt-1">
-                    <Clock size={12} className="mr-1" />
-                    {new Date(chat.updatedAt).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                <button 
+                  onClick={() => onSelectChat(chat.id)}
+                  className="flex-1 text-left flex items-start"
+                >
+                  <div className="flex-1 truncate">
+                    <h3 className="font-medium truncate">{chat.title}</h3>
+                    <div className="flex items-center text-xs text-white/60 mt-1">
+                      <Clock size={12} className="mr-1" />
+                      {new Date(chat.updatedAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+                <button
+                  onClick={(e) => handleDelete(e, chat.id)}
+                  className={`ml-2 p-1.5 rounded-full text-white/60 hover:text-white/90 hover:bg-red-500/30 transition-colors ${
+                    isDeleting === chat.id ? 'opacity-50 pointer-events-none' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  title="Delete conversation"
+                  disabled={isDeleting === chat.id}
+                >
+                  {isDeleting === chat.id ? (
+                    <div className="w-4 h-4 border-2 border-t-transparent border-white/60 rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                </button>
+              </div>
             ))}
           </div>
         ) : (

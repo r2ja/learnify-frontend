@@ -21,6 +21,16 @@ function getCookieValue(cookieString: string, cookieName: string): string | null
   return null;
 }
 
+// Response interface for learning profile
+interface LearningProfileResponse {
+  userId: string;
+  language: string;
+  courseName: string | null;
+  chapterName: string | null;
+  profile: any; // Using any for simplicity
+  id?: string; // Optional ID field for existing profiles
+}
+
 // GET /api/users/[id]/learning-profile
 export async function GET(request: Request, { params }: RouteParams) {
   try {
@@ -120,7 +130,7 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
 
     // Construct the response
-    const response = {
+    const response: LearningProfileResponse = {
       userId,
       language: user.language || 'english',
       courseName,
@@ -132,6 +142,11 @@ export async function GET(request: Request, { params }: RouteParams) {
         understandingStyle: 'Sequential'
       }
     };
+
+    // If a learning profile exists, include its ID in the response
+    if (learningProfile) {
+      response.id = learningProfile.id;
+    }
 
     console.log('Sending response:', JSON.stringify(response, null, 2));
     return NextResponse.json(response, { status: 200 });

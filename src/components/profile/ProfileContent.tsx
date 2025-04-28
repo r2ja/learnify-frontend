@@ -111,10 +111,14 @@ export function ProfileContent() {
           if (profileResponse.ok) {
             const profileData = await profileResponse.json();
             console.log('Learning profile data received:', JSON.stringify(profileData, null, 2));
-            processingStyle = profileData.processingStyle || 'Active';
-            perceptionStyle = profileData.perceptionStyle || 'Intuitive';
-            inputStyle = profileData.inputStyle || 'Visual';
-            understandingStyle = profileData.understandingStyle || 'Sequential';
+            
+            // Access the learning styles from the profile property
+            if (profileData.profile) {
+              processingStyle = profileData.profile.processingStyle || 'Active';
+              perceptionStyle = profileData.profile.perceptionStyle || 'Intuitive';
+              inputStyle = profileData.profile.inputStyle || 'Visual';
+              understandingStyle = profileData.profile.understandingStyle || 'Sequential';
+            }
           } else {
             console.warn('Learning profile fetch returned non-OK status:', profileResponse.status);
           }

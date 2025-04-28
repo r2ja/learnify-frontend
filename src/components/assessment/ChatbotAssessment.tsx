@@ -45,25 +45,45 @@ export function ChatbotAssessment() {
 
       try {
         setCheckingProfile(true);
+        console.log('Checking for existing learning profile for user:', user.id);
         const response = await fetch(`/api/users/${user.id}/learning-profile`);
-        const data = await response.json();
         
-        // If the profile has an id, it exists in the database
-        if (data.id) {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch profile: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Learning profile API response:', data);
+        
+        // The profile data is in the 'profile' property
+        const profile = data.profile;
+        
+        // Check if profile exists and has learning style data
+        if (profile && 
+            profile.processingStyle && 
+            profile.perceptionStyle && 
+            profile.inputStyle && 
+            profile.understandingStyle) {
+          
+          console.log('Existing profile found with styles:', profile);
           setHasExistingProfile(true);
           
           // Format the learning style information
-          const styleInfo = {
-            processingStyle: data.processingStyle || 'Unknown',
-            perceptionStyle: data.perceptionStyle || 'Unknown',
-            inputStyle: data.inputStyle || 'Unknown',
-            understandingStyle: data.understandingStyle || 'Unknown'
+          const styleInfo: LearningStyleInfo = {
+            processingStyle: profile.processingStyle,
+            perceptionStyle: profile.perceptionStyle,
+            inputStyle: profile.inputStyle,
+            understandingStyle: profile.understandingStyle
           };
           
           setLearningStyle(styleInfo);
+        } else {
+          console.log('No complete learning profile found');
+          setHasExistingProfile(false);
         }
       } catch (error) {
         console.error('Error checking learning profile:', error);
+        setHasExistingProfile(false);
       } finally {
         setCheckingProfile(false);
       }

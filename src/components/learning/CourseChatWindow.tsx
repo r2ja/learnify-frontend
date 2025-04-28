@@ -635,16 +635,6 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       setMessages((prev) => [...prev, userMessage]);
       setInputMessage("");
       setIsInitialState(false);
-
-      // Create a placeholder loading message
-      const loadingMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: "",
-        isUser: false,
-        accentColor: "var(--primary)",
-      };
-      
-      setMessages(prev => [...prev, loadingMessage]);
       
       // Send the message to the WebSocket server
       sendMessageToWebSocket(text);
@@ -956,13 +946,20 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                   ))}
                   
                   {isLoading && (
-                    <div className="flex items-center">
-                      <div className="flex space-x-1 ml-12">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
-                  </div>
-                </div>
+                    <div className="flex justify-center mb-4 px-4 sm:px-8 md:px-12 lg:px-20">
+                      <div className="flex-shrink-0 w-9 h-9 rounded-md bg-[var(--primary)] text-white flex items-center justify-center mr-3 mt-0.5">
+                        <span className="text-base font-semibold">L</span>
+                      </div>
+                      <div className="relative max-w-[90%] sm:max-w-[80%] md:max-w-[70%] lg:max-w-[65%] py-4 px-5 rounded-lg bg-gray-100 text-gray-800">
+                        <div className="flex items-center justify-start h-6">
+                          <div className="flex space-x-2">
+                            <div className="w-2.5 h-2.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                            <div className="w-2.5 h-2.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                            <div className="w-2.5 h-2.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
                   
                   <div ref={endOfMessagesRef} />

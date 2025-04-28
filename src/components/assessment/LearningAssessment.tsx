@@ -9,17 +9,22 @@ export function LearningAssessment() {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [messages, setMessages] = useState([]);
-  const [responses, setResponses] = useState([]); // Only validated responses
+  const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
+  const [responses, setResponses] = useState<Array<string>>([]); // Only validated responses
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [testComplete, setTestComplete] = useState(false);
-  const [learningStyle, setLearningStyle] = useState(null);
+  const [learningStyle, setLearningStyle] = useState<{
+    processingStyle: string;
+    perceptionStyle: string;
+    inputStyle: string;
+    understandingStyle: string;
+  } | null>(null);
   const [hasExistingProfile, setHasExistingProfile] = useState(false);
 
-  const chatEndRef = useRef(null);
-  const inputRef = useRef(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Check if user already has a learning profile
   useEffect(() => {
@@ -27,25 +32,41 @@ export function LearningAssessment() {
       if (!user?.id) return;
 
       try {
+        console.log('Checking for existing learning profile for user:', user.id);
         const response = await fetch(`/api/users/${user.id}/learning-profile`);
-        const data = await response.json();
         
-        // If the profile has an id, it exists in the database
-        if (data.id) {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch profile: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Learning profile API response:', data);
+        
+        // The profile data is in the 'profile' property
+        const profile = data.profile;
+        
+        // Check if profile exists and has learning style data
+        if (profile) {
+          console.log('Existing profile found:', profile);
           setHasExistingProfile(true);
           
-          // Format the learning style information
+          // Format the learning style information with the actual values from API
           const styleInfo = {
-            processingStyle: data.processingStyle || 'Unknown',
-            perceptionStyle: data.perceptionStyle || 'Unknown',
-            inputStyle: data.inputStyle || 'Unknown',
-            understandingStyle: data.understandingStyle || 'Unknown'
+            processingStyle: profile.processingStyle,
+            perceptionStyle: profile.perceptionStyle,
+            inputStyle: profile.inputStyle,
+            understandingStyle: profile.understandingStyle
           };
           
           setLearningStyle(styleInfo);
+        } else {
+          console.log('No learning profile found');
+          setHasExistingProfile(false);
         }
-      } catch (error) {
-        console.error('Error checking learning profile:', error);
+      } catch (error: unknown) {
+        const errorToLog = error instanceof Error ? error.message : String(error);
+        console.error('Error checking learning profile:', errorToLog);
+        setHasExistingProfile(false);
       }
     };
 
@@ -92,7 +113,7 @@ export function LearningAssessment() {
     }
   }, [testComplete, isLoading, messages]);
 
-  const handleSend = async (e) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (input.trim().length < 5) {
@@ -187,7 +208,7 @@ This information will help us personalize your learning experience.`,
       }
     } catch (error) {
       console.error('Error in assessment:', error);
-      setError(error.message);
+      setError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsLoading(false);
       setInput('');
