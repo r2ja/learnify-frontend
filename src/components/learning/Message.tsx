@@ -1,5 +1,6 @@
-import { FC } from 'react';
+import { FC, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import MermaidDiagram from './MermaidDiagram';
 
 interface MessageProps {
   content: string;
@@ -8,12 +9,50 @@ interface MessageProps {
   isMarkdown?: boolean;
 }
 
+// Helper to determine if a content block might contain a mermaid diagram
+const containsMermaidDiagram = (content: string): boolean => {
+  // Look for common Mermaid diagram identifiers
+  const mermaidIdentifiers = [
+    'graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 
+    'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie'
+  ];
+  
+  const lowerContent = content.toLowerCase();
+  return mermaidIdentifiers.some(id => lowerContent.includes(id));
+};
+
 export const Message: FC<MessageProps> = ({ 
   content, 
   isUser, 
   accentColor = 'var(--primary)',
   isMarkdown = false
 }) => {
+  // Extract and process Mermaid diagrams from content
+  const { processedContent, mermaidCharts } = useMemo(() => {
+    if (!isMarkdown) {
+      return { processedContent: content, mermaidCharts: [] };
+    }
+
+    // Simple, focused regex for extracting Mermaid code blocks
+    const mermaidPattern = /```mermaid\n([\s\S]*?)```/g;
+    const charts: string[] = [];
+    let lastIndex = 0;
+    let result = '';
+    let match;
+
+    // Replace all Mermaid code blocks with placeholders
+    let processedText = content;
+    let matchCount = 0;
+
+    processedText = content.replace(mermaidPattern, (_, chartContent) => {
+      const placeholder = `__MERMAID_${matchCount++}__`;
+      charts.push(chartContent.trim());
+      return placeholder;
+    });
+
+    return { processedContent: processedText, mermaidCharts: charts };
+  }, [content, isMarkdown]);
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-center'} mb-4 px-4 sm:px-8 md:px-12 lg:px-20`}>
       {!isUser && (
@@ -33,8 +72,16 @@ export const Message: FC<MessageProps> = ({
           {isMarkdown ? (
             <div className="prose prose-base max-w-none prose-headings:font-bold prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-hr:my-4 prose-ul:pl-5 prose-ol:pl-5">
               <ReactMarkdown>
-                {content}
+                {processedContent}
               </ReactMarkdown>
+              
+              {/* Render Mermaid diagrams separately - cleaner approach */}
+              {mermaidCharts.map((chart, index) => (
+                <MermaidDiagram 
+                  key={`mermaid-${index}`} 
+                  chart={chart} 
+                />
+              ))}
             </div>
           ) : (
             content

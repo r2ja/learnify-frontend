@@ -10,9 +10,9 @@ interface MainLayoutProps {
 
 export function MainLayout({ children, showNavbar = true }: MainLayoutProps) {
   return (
-    <div className="min-h-screen bg-gray-50 flex overflow-hidden">
+    <div className="h-screen bg-gray-50 flex overflow-hidden">
       {showNavbar && <Navbar />}
-      <main className={`${showNavbar ? 'ml-20' : ''} p-0 flex-1 overflow-hidden`}>
+      <main className={`${showNavbar ? 'ml-20' : ''} p-0 flex-1 flex overflow-hidden`}>
         {children}
       </main>
     </div>

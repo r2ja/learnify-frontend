@@ -384,7 +384,14 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       if (response.ok) {
         const data = await response.json();
         if (data && data.messages) {
-          setMessages(data.messages);
+          // Process messages to ensure proper markdown and mermaid handling
+          const processedMessages = data.messages.map((msg: ChatMessage) => ({
+            ...msg,
+            // Ensure all assistant messages are treated as markdown
+            isMarkdown: msg.isMarkdown !== undefined ? msg.isMarkdown : !msg.isUser
+          }));
+          
+          setMessages(processedMessages);
           setCurrentConversationId(data.id);
           setCurrentConversationTitle(data.title);
           setIsInitialState(false);
@@ -452,7 +459,14 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           const data = await response.json();
           
           if (data && data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
-            setMessages(data.messages);
+            // Process messages to ensure proper markdown and mermaid handling
+            const processedMessages = data.messages.map((msg: ChatMessage) => ({
+              ...msg,
+              // Ensure all assistant messages are treated as markdown
+              isMarkdown: msg.isMarkdown !== undefined ? msg.isMarkdown : !msg.isUser
+            }));
+            
+            setMessages(processedMessages);
             setCurrentConversationId(data.id);
             setCurrentConversationTitle(data.title || "Chat");
             setIsInitialState(false);
@@ -481,12 +495,23 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   const handleWebSocketMessage = (data: any) => {
     if (data.type === 'text') {
       // For text messages, update the last bot message or create a new one
-      setMessages(prev => {
-        const lastMessage = prev[prev.length - 1];
+      setMessages(prevMessages => {
+        if (prevMessages.length === 0) {
+          return [{
+            id: Date.now().toString(),
+            content: data.content,
+            isUser: false,
+            accentColor: "var(--primary)",
+            isMarkdown: true
+          }];
+        }
+        
+        const lastMessage = prevMessages[prevMessages.length - 1];
+        
         // If the last message is from the bot, append to it
         if (!lastMessage.isUser) {
-          const updatedMessages = [...prev];
-          updatedMessages[prev.length - 1] = {
+          const updatedMessages = [...prevMessages];
+          updatedMessages[prevMessages.length - 1] = {
             ...lastMessage,
             content: lastMessage.content + data.content,
             isMarkdown: true
@@ -494,7 +519,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           return updatedMessages;
         } else {
           // Otherwise create a new bot message
-          return [...prev, {
+          return [...prevMessages, {
             id: Date.now().toString(),
             content: data.content,
             isUser: false,
@@ -505,17 +530,42 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       });
       setIsLoading(false);
     } else if (data.type === 'mermaid_gen') {
-      // Handle mermaid diagrams
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          content: '```mermaid\n' + data.content + '\n```',
-          isUser: false,
-          accentColor: "var(--primary)",
-          isMarkdown: true
+      // Handle mermaid diagrams with proper markdown
+      const mermaidContent = `\`\`\`mermaid\n${data.content}\n\`\`\``;
+      
+      setMessages(prevMessages => {
+        if (prevMessages.length === 0) {
+          return [{
+            id: Date.now().toString(),
+            content: "Here's a visual representation:\n\n" + mermaidContent,
+            isUser: false,
+            accentColor: "var(--primary)",
+            isMarkdown: true
+          }];
         }
-      ]);
+        
+        const lastMessage = prevMessages[prevMessages.length - 1];
+        
+        // If the last message is from the bot, append the diagram to it
+        if (!lastMessage.isUser) {
+          const updatedMessages = [...prevMessages];
+          updatedMessages[prevMessages.length - 1] = {
+            ...lastMessage,
+            content: lastMessage.content + "\n\n" + mermaidContent,
+            isMarkdown: true
+          };
+          return updatedMessages;
+        } else {
+          // Otherwise create a new message with just the diagram
+          return [...prevMessages, {
+            id: Date.now().toString(),
+            content: "Here's a visual representation:\n\n" + mermaidContent,
+            isUser: false,
+            accentColor: "var(--primary)",
+            isMarkdown: true
+          }];
+        }
+      });
       setIsLoading(false);
     } else if (data.type === 'complete') {
       // Response is complete
@@ -531,13 +581,12 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           const words = firstUserMessage.split(' ').slice(0, 5).join(' ');
           const title = words.length > 30 ? words.substring(0, 30) + '...' : words;
           setCurrentConversationTitle(title);
-          // No need to trigger refresh here as saveMessages will do it when creating the new conversation
         }
       }
     } else if (data.type === 'error') {
       // Handle error
-      setMessages(prev => [
-        ...prev,
+      setMessages(prevMessages => [
+        ...prevMessages,
         {
           id: Date.now().toString(),
           content: `Error: ${data.content}`,
@@ -773,11 +822,11 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   }, [user, loadingUser]);
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden">
+    <div className="relative flex h-full w-full overflow-hidden flex-col">
       <BackgroundPaths />
       <ConnectionStatus isConnected={isConnected} />
       
-      <div className="w-full h-full flex z-10">
+      <div className="w-full h-full flex z-10 flex-1 overflow-hidden">
         <div 
           className={`flex-1 flex flex-col h-full bg-[var(--background)] ${isHistoryOpen ? 'mr-[320px]' : ''} transition-all duration-300`}
         >
@@ -896,7 +945,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           )}
 
           {/* Chat Body */}
-          <div className="flex-1 overflow-y-auto" ref={messageContainerRef}>
+          <div className="flex-1 overflow-y-auto h-0" ref={messageContainerRef}>
             <AnimatePresence mode="wait">
               {isInitialState ? (
                 <motion.div
