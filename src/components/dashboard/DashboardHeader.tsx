@@ -56,17 +56,6 @@ export function DashboardHeader() {
         </div>
         <div>
           <h2 className="text-2xl font-bold">{getGreeting()}, {user?.name || 'Student'}</h2>
-          {loading ? (
-            <div className="text-white/80">Loading your learning profile...</div>
-          ) : error ? (
-            <div className="text-red-300 text-sm">Error: {error}</div>
-          ) : learningProfile ? (
-            <div className="text-white/80">Learning Style: {learningProfile.learningStyle}</div>
-          ) : (
-            <div className="text-white/80">
-              <a href="/assessment" className="underline">Take the learning style assessment</a>
-            </div>
-          )}
         </div>
       </div>
       <p className="text-white/80 leading-relaxed">

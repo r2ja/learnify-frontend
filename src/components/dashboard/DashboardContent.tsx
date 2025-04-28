@@ -1,7 +1,7 @@
 'use client';
 
 import { DashboardHeader } from './DashboardHeader';
-import CoursesSection from './CoursesSection';
+import OptimizedCoursesSection from './OptimizedCoursesSection';
 import { DailyProgress } from './DailyProgress';
 import { QuizResults } from './QuizResults';
 import { NeedHelp } from './NeedHelp';
@@ -19,8 +19,8 @@ export function DashboardContent() {
           {/* Header Section */}
           <DashboardHeader />
           
-          {/* Courses Section */}
-          <CoursesSection />
+          {/* Courses Section - Using Optimized Version */}
+          <OptimizedCoursesSection />
         </div>
         
         {/* Right Section (1/3 width) */}

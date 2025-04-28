@@ -1,15 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { courseApi } from '@/lib/api';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useUser } from '@/lib/hooks/useUser';
-import { toast } from 'react-hot-toast';
+import { useCourses, Course } from '@/lib/hooks/useCourses';
 
-// Define interfaces for type safety
+// Interface definitions
 interface SyllabusItem {
   title: string;
   content?: string;
@@ -22,19 +21,6 @@ interface SyllabusData {
   chapters?: SyllabusItem[];
 }
 
-interface Course {
-  id: string;
-  title: string;
-  description?: string;
-  imageUrl?: string;
-  category: string;
-  chapters: number;
-  duration: string;
-  level: string;
-  syllabus?: SyllabusData | SyllabusItem[] | any;
-  isEnrolled?: boolean;
-}
-
 interface CourseModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -44,8 +30,27 @@ interface CourseModalProps {
   isEnrolling: boolean;
 }
 
-// Modal component for course details
-function CourseModal({ isOpen, onClose, course, onStartCourse, onEnroll, isEnrolling }: CourseModalProps) {
+// Loading skeleton component for better UX during loading
+const CoursesSkeleton = () => (
+  <div className="animate-pulse">
+    {[...Array(3)].map((_, i) => (
+      <div key={i} className="py-4 border-b last:border-b-0">
+        <div className="h-5 bg-gray-200 rounded w-3/4 mb-2"></div>
+        <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+      </div>
+    ))}
+  </div>
+);
+
+// Modal component for course details - memoized to prevent unnecessary re-renders
+const CourseModal = React.memo(function CourseModal({ 
+  isOpen, 
+  onClose, 
+  course, 
+  onStartCourse, 
+  onEnroll, 
+  isEnrolling 
+}: CourseModalProps) {
   const [mounted, setMounted] = useState(false);
   
   useEffect(() => {
@@ -198,22 +203,110 @@ function CourseModal({ isOpen, onClose, course, onStartCourse, onEnroll, isEnrol
   
   // Use createPortal only on client side
   return createPortal(modalContent, document.body);
-}
+});
 
-export default function CoursesSection() {
+// Individual course item - memoized to prevent unnecessary re-renders
+const CourseItem = React.memo(function CourseItem({ 
+  course, 
+  index,
+  onViewCourse,
+  onContinueLearning,
+  onWithdraw,
+  menuOpen,
+  setMenuOpen,
+  withdrawing,
+  menuRef
+}: { 
+  course: Course; 
+  index: number;
+  onViewCourse: (course: Course) => void;
+  onContinueLearning: (courseId: string) => void;
+  onWithdraw: (courseId: string) => void;
+  menuOpen: string | null;
+  setMenuOpen: (id: string | null) => void;
+  withdrawing: boolean;
+  menuRef: React.RefObject<HTMLDivElement>;
+}) {
+  return (
+    <div 
+      className={`flex justify-between items-center py-4 border-b last:border-b-0 animate-fadeIn`}
+      style={{ animationDelay: `${(index + 1) * 100}ms` }}
+    >
+      <div className="flex-1">
+        <h3 className="font-medium text-lg">{course.title}</h3>
+        <div className="text-gray-500 text-sm">{course.chapters} Lectures</div>
+      </div>
+      <div className="flex items-center">
+        <span className="text-gray-500 mr-4">{course.level}</span>
+        {!course.isEnrolled ? (
+          <button 
+            className="py-2 px-4 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 text-sm"
+            onClick={() => onViewCourse(course)}
+          >
+            View Course
+          </button>
+        ) : (
+          <div className="flex items-center relative">
+            <button 
+              className="py-2 px-4 rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-300 text-sm mr-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                onContinueLearning(course.id);
+              }}
+            >
+              Continue Learning
+            </button>
+            <button
+              className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 transition-colors"
+              onClick={() => setMenuOpen(menuOpen === course.id ? null : course.id)}
+              aria-label="Course options"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+              </svg>
+            </button>
+            
+            {menuOpen === course.id && (
+              <div 
+                ref={menuRef}
+                className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg py-1 z-20 w-48"
+              >
+                <button
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center"
+                  onClick={() => onWithdraw(course.id)}
+                  disabled={withdrawing}
+                >
+                  {withdrawing ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Withdraw from Course
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+export default function OptimizedCoursesSection() {
   const { user, loading: userLoading } = useUser();
   const [activeTab, setActiveTab] = useState('All Courses');
   const tabs = ['All Courses', 'Enrolled Courses'];
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [enrolledLoading, setEnrolledLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [enrolledError, setEnrolledError] = useState<string | null>(null);
-  const [fetchingCourseDetails, setFetchingCourseDetails] = useState(false);
-  const [enrolling, setEnrolling] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -221,177 +314,103 @@ export default function CoursesSection() {
   const router = useRouter();
   const { showToast } = useToast();
   
-  // Fetch all courses
-  useEffect(() => {
-    const fetchCourses = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await fetch(`/api/courses?userId=${user?.id}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch courses');
-        }
-        const data = await response.json();
-        setCourses(data);
-      } catch (error) {
-        console.error('Error fetching courses:', error);
-        setError('Failed to load courses');
-        toast.error('Failed to load courses');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (!userLoading && user?.id) {
-      fetchCourses();
-    }
-  }, [user?.id, userLoading]);
+  // Use the custom courses hook
+  const { 
+    allCourses,
+    enrolledCourses,
+    selectedCourse,
+    loading,
+    error,
+    fetchCourses,
+    fetchUserEnrolledCourses,
+    getCourseDetails,
+    selectCourse,
+    enrollCourse,
+    withdrawCourse,
+    shouldRefreshData
+  } = useCourses();
   
-  // Fetch enrolled courses
+  // Fetch courses when component mounts or when needed
   useEffect(() => {
-    const fetchEnrolledCourses = async () => {
-      try {
-        setEnrolledLoading(true);
-        setEnrolledError(null);
-        const response = await fetch(`/api/courses/enrolled?userId=${user?.id}`);
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to fetch enrolled courses');
-        }
-        const data = await response.json();
-        setEnrolledCourses(data);
-      } catch (error) {
-        console.error('Error fetching enrolled courses:', error);
-        setEnrolledError('Failed to load enrolled courses');
-        toast.error('Failed to load enrolled courses');
-      } finally {
-        setEnrolledLoading(false);
-      }
-    };
-
     if (!userLoading && user?.id) {
-      fetchEnrolledCourses();
+      if (shouldRefreshData('all')) {
+        fetchCourses(user.id);
+      }
+      
+      if (shouldRefreshData('enrolled')) {
+        fetchUserEnrolledCourses(user.id);
+      }
     }
-  }, [user?.id, userLoading]);
+  }, [fetchCourses, fetchUserEnrolledCourses, shouldRefreshData, user?.id, userLoading]);
   
   // Get the appropriate courses and loading state based on active tab
   const { currentCourses, isLoading, currentError } = useMemo(() => ({
-    currentCourses: activeTab === 'Enrolled Courses' ? enrolledCourses : courses,
-    isLoading: activeTab === 'Enrolled Courses' ? enrolledLoading : loading,
-    currentError: activeTab === 'Enrolled Courses' ? enrolledError : error
-  }), [activeTab, courses, enrolledCourses, loading, enrolledLoading, error, enrolledError]);
+    currentCourses: activeTab === 'Enrolled Courses' ? enrolledCourses : allCourses,
+    isLoading: activeTab === 'Enrolled Courses' ? loading.enrolledCourses : loading.allCourses,
+    currentError: activeTab === 'Enrolled Courses' ? error.enrolledCourses : error.allCourses
+  }), [activeTab, allCourses, enrolledCourses, loading, error]);
   
-  const handleViewCourse = async (course: Course) => {
+  // View course with details
+  const handleViewCourse = useCallback(async (course: Course) => {
     try {
-      setFetchingCourseDetails(true);
-      
-      // Fetch detailed course info including syllabus
-      const detailedCourse = await courseApi.getById(course.id);
-      
-      // Ensure syllabus data is properly parsed if it's a string
-      if (typeof detailedCourse.syllabus === 'string') {
-        try {
-          detailedCourse.syllabus = JSON.parse(detailedCourse.syllabus);
-        } catch (e) {
-          console.error('Error parsing syllabus JSON:', e);
-        }
-      }
-      
-      setSelectedCourse(detailedCourse);
+      // Set basic course info immediately for better UX
+      selectCourse(course);
       setIsModalOpen(true);
+      
+      // In parallel, fetch detailed course data
+      getCourseDetails(course.id);
     } catch (err) {
       console.error('Error fetching course details:', err);
-      // Fall back to showing the basic course data
-      setSelectedCourse(course);
-      setIsModalOpen(true);
-    } finally {
-      setFetchingCourseDetails(false);
+      showToast('error', 'Failed to load course details');
     }
-  };
+  }, [getCourseDetails, selectCourse, showToast]);
   
-  const handleStartCourse = (courseId: string) => {
-    // Redirect to the course detail page
+  // Navigate to course page
+  const handleStartCourse = useCallback((courseId: string) => {
     router.push(`/courses/${courseId}`);
     setIsModalOpen(false);
-  };
+  }, [router]);
 
-  const handleContinueLearning = async (courseId: string) => {
+  // Navigate to chat with course context
+  const handleContinueLearning = useCallback(async (courseId: string) => {
     try {
       if (!user?.id) {
         showToast('error', 'Please log in to continue learning');
         return;
       }
       
-      // Show loading toast
       showToast('info', 'Opening chat...');
-      
-      // Directly navigate to the chat with the course ID
       router.push(`/chat?courseId=${courseId}`);
     } catch (error) {
       console.error('Error navigating to chat:', error);
       showToast('error', 'Could not open chat. Please try again.');
     }
-  };
+  }, [user?.id, router, showToast]);
 
-  const handleEnroll = async (courseId: string) => {
+  // Enroll in course
+  const handleEnroll = useCallback(async (courseId: string) => {
     try {
-      setEnrolling(true);
-      
       if (!user?.id) {
         showToast('error', 'Please log in to enroll in courses');
         return;
       }
       
-      // Make direct fetch call instead of using the API client
-      const response = await fetch(`/api/courses/${courseId}/enroll`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: user.id }),
-      });
+      const success = await enrollCourse(courseId, user.id);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to enroll: ${response.statusText}`);
+      if (success) {
+        // Show success message
+        showToast('success', 'Successfully enrolled in course!');
+        
+        // Close the modal after successful enrollment
+        setIsModalOpen(false);
+      } else {
+        showToast('error', 'Failed to enroll in course. Please try again.');
       }
-      
-      // Update the course list to reflect enrollment
-      setCourses(prevCourses => 
-        prevCourses.map(course => 
-          course.id === courseId 
-            ? { ...course, isEnrolled: true }
-            : course
-        )
-      );
-      
-      // Update the selected course if it's the one being enrolled
-      if (selectedCourse && selectedCourse.id === courseId) {
-        setSelectedCourse({
-          ...selectedCourse,
-          isEnrolled: true
-        });
-      }
-      
-      // Refresh enrolled courses list
-      const enrolledResponse = await fetch(`/api/courses/enrolled?userId=${user.id}`);
-      if (enrolledResponse.ok) {
-        const enrolledData = await enrolledResponse.json();
-        setEnrolledCourses(enrolledData);
-      }
-      
-      // Show success message
-      showToast('success', 'Successfully enrolled in course!');
-      
-      // Close the modal after successful enrollment
-      setIsModalOpen(false);
     } catch (err) {
       console.error('Error enrolling in course:', err);
-      showToast('error', err instanceof Error ? err.message : 'Failed to enroll in course. Please try again.');
-    } finally {
-      setEnrolling(false);
+      showToast('error', err instanceof Error ? err.message : 'Failed to enroll in course');
     }
-  };
+  }, [enrollCourse, user?.id, showToast]);
   
   // Close menu when clicking outside
   useEffect(() => {
@@ -408,7 +427,7 @@ export default function CoursesSection() {
   }, []);
 
   // Handle withdrawal from a course
-  const handleWithdraw = async (courseId: string) => {
+  const handleWithdraw = useCallback(async (courseId: string) => {
     try {
       if (!user?.id) {
         showToast('error', 'You must be logged in to withdraw from a course');
@@ -417,44 +436,16 @@ export default function CoursesSection() {
       
       setWithdrawing(true);
       
-      try {
-        const response = await fetch(`/api/courses/${courseId}/withdraw`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ userId: user.id }),
-        });
-        
-        // Try to parse the response as JSON
-        const data = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(data.error || `Failed to withdraw: ${response.statusText}`);
-        }
-        
-        // Success path
-        // Update local state to reflect withdrawal
-        setCourses(prevCourses => 
-          prevCourses.map(course => 
-            course.id === courseId 
-              ? { ...course, isEnrolled: false }
-              : course
-          )
-        );
-        
-        // Remove from enrolled courses
-        setEnrolledCourses(prev => prev.filter(course => course.id !== courseId));
-        
+      const success = await withdrawCourse(courseId, user.id);
+      
+      if (success) {
         // Close menu
         setMenuOpen(null);
         
         // Show success message
         showToast('success', 'Successfully withdrew from course');
-      } catch (responseError) {
-        console.error('Error with withdraw request:', responseError);
-        showToast('error', responseError instanceof Error ? responseError.message : 'Failed to withdraw from course');
-        throw responseError; // rethrow to be caught by the outer try-catch
+      } else {
+        showToast('error', 'Failed to withdraw from course');
       }
     } catch (err) {
       console.error('Error withdrawing from course:', err);
@@ -462,12 +453,22 @@ export default function CoursesSection() {
     } finally {
       setWithdrawing(false);
     }
-  };
+  }, [withdrawCourse, user?.id, showToast]);
   
-  if (userLoading || loading) {
+  // Show loading skeleton if user data is still loading
+  if (userLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-gray-100 shadow-sm relative z-10 animate-fadeIn animation-delay-300">
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="text-xl font-bold">My Courses</h2>
+          <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+        </div>
+        <div className="flex space-x-4 mb-6">
+          {tabs.map((tab) => (
+            <div key={tab} className="h-6 w-24 bg-gray-200 rounded animate-pulse"></div>
+          ))}
+        </div>
+        <CoursesSkeleton />
       </div>
     );
   }
@@ -503,14 +504,18 @@ export default function CoursesSection() {
       
       {/* Course List */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-        </div>
+        <CoursesSkeleton />
       ) : currentError ? (
         <div className="py-10 text-center">
           <p className="text-red-500">{currentError}</p>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              if (activeTab === 'Enrolled Courses') {
+                fetchUserEnrolledCourses(user?.id || '');
+              } else {
+                fetchCourses(user?.id);
+              }
+            }}
             className="mt-4 text-[var(--primary)] underline"
           >
             Try again
@@ -527,78 +532,18 @@ export default function CoursesSection() {
       ) : (
         <div className="space-y-4">
           {currentCourses.map((course, index) => (
-            <div 
-              key={course.id} 
-              className={`flex justify-between items-center py-4 border-b last:border-b-0 animate-fadeIn`}
-              style={{ animationDelay: `${(index + 1) * 100}ms` }}
-            >
-              <div className="flex-1">
-                <h3 className="font-medium text-lg">{course.title}</h3>
-                <div className="text-gray-500 text-sm">{course.chapters} Lectures</div>
-              </div>
-              <div className="flex items-center">
-                <span className="text-gray-500 mr-4">{course.level}</span>
-                {!course.isEnrolled ? (
-                  <button 
-                    className="py-2 px-4 rounded-md text-white bg-[var(--primary)] hover:bg-[var(--primary-hover)] transition-colors duration-300 text-sm"
-                    onClick={() => handleViewCourse(course)}
-                  >
-                    View Course
-                  </button>
-                ) : (
-                  <div className="flex items-center relative">
-                    <button 
-                      className="py-2 px-4 rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-300 text-sm mr-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleContinueLearning(course.id);
-                      }}
-                    >
-                      Continue Learning
-                    </button>
-                    <button
-                      className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 transition-colors"
-                      onClick={() => setMenuOpen(menuOpen === course.id ? null : course.id)}
-                      aria-label="Course options"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                      </svg>
-                    </button>
-                    
-                    {menuOpen === course.id && (
-                      <div 
-                        ref={menuRef}
-                        className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg py-1 z-20 w-48"
-                      >
-                        <button
-                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center"
-                          onClick={() => handleWithdraw(course.id)}
-                          disabled={withdrawing}
-                        >
-                          {withdrawing ? (
-                            <>
-                              <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Processing...
-                            </>
-                          ) : (
-                            <>
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                              Withdraw from Course
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+            <CourseItem
+              key={course.id}
+              course={course}
+              index={index}
+              onViewCourse={handleViewCourse}
+              onContinueLearning={handleContinueLearning}
+              onWithdraw={handleWithdraw}
+              menuOpen={menuOpen}
+              setMenuOpen={setMenuOpen}
+              withdrawing={withdrawing}
+              menuRef={menuRef}
+            />
           ))}
         </div>
       )}
@@ -611,7 +556,7 @@ export default function CoursesSection() {
           course={selectedCourse}
           onStartCourse={handleStartCourse}
           onEnroll={handleEnroll}
-          isEnrolling={enrolling}
+          isEnrolling={loading.enrollment}
         />
       )}
     </div>
