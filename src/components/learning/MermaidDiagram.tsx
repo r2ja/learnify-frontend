@@ -87,6 +87,23 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
     renderDiagram();
   }, [chart]);
   
+  useEffect(() => {
+    // After SVG is set, ensure it fills the container
+    if (svg && containerRef.current) {
+      const svgEl = containerRef.current.querySelector('svg');
+      if (svgEl) {
+        svgEl.setAttribute('width', '100%');
+        svgEl.setAttribute('height', '100%');
+        svgEl.style.width = '100%';
+        svgEl.style.height = '100%';
+        svgEl.style.maxWidth = '100%';
+        svgEl.style.maxHeight = '100%';
+        svgEl.style.objectFit = 'contain';
+        svgEl.style.display = 'block';
+      }
+    }
+  }, [svg]);
+  
   // Helper function to fix common syntax issues
   const fixMermaidSyntax = (chartCode: string, errorMsg: string): string => {
     let fixed = chartCode.trim();
@@ -215,15 +232,9 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
 
   // Successfully rendered SVG
   return (
-    <div 
-      className="my-4 flex justify-center bg-white rounded-md p-2 overflow-auto"
-      ref={containerRef}
-    >
+    <div ref={containerRef} className="w-full h-full flex items-center justify-center">
       {svg ? (
-        <div 
-          className="mermaid-diagram w-full"
-          dangerouslySetInnerHTML={{ __html: svg }} 
-        />
+        <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: svg }} />
       ) : (
         <div className="p-3 bg-gray-100 rounded text-sm text-gray-500">
           No diagram content available

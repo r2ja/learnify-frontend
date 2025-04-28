@@ -345,7 +345,9 @@ export default function OptimizedCoursesSection() {
   
   // Get the appropriate courses and loading state based on active tab
   const { currentCourses, isLoading, currentError } = useMemo(() => ({
-    currentCourses: activeTab === 'Enrolled Courses' ? enrolledCourses : allCourses,
+    currentCourses: activeTab === 'Enrolled Courses' 
+      ? Array.isArray(enrolledCourses) ? enrolledCourses : []
+      : Array.isArray(allCourses) ? allCourses : [],
     isLoading: activeTab === 'Enrolled Courses' ? loading.enrolledCourses : loading.allCourses,
     currentError: activeTab === 'Enrolled Courses' ? error.enrolledCourses : error.allCourses
   }), [activeTab, allCourses, enrolledCourses, loading, error]);

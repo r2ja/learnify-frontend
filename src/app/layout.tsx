@@ -27,22 +27,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`w-full h-full m-0 p-0 overflow-hidden ${playfair.variable}`} suppressHydrationWarning>
-      <Script id="mermaid-init" strategy="afterInteractive">
-        {`
-          if (typeof window !== 'undefined') {
-            import('mermaid').then((mermaid) => {
-              mermaid.default.initialize({
-                startOnLoad: false,
-                theme: 'default',
-                securityLevel: 'loose',
-                fontFamily: 'inherit',
-                logLevel: 1,
-                suppressErrorRendering: true
-              });
-            }).catch(err => console.error('Error loading mermaid:', err));
-          }
-        `}
-      </Script>
       <body className={`${inter.className} w-full h-full m-0 p-0`}>
         <Providers>
           <AuthProvider>

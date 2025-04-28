@@ -25,6 +25,7 @@
     "next-auth": "^4.24.11",
     "next-mdx-remote": "^5.0.0",
     "nextjs-toploader": "^3.8.16",
+    "openai": "^4.96.0",
     "pg": "^8.14.1",
     "pg-format": "^1.0.4",
     "react": "^19.0.0",

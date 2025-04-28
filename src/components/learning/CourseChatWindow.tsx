@@ -536,11 +536,11 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       setMessages(prevMessages => {
         if (prevMessages.length === 0) {
           return [{
-            id: Date.now().toString(),
+          id: Date.now().toString(),
             content: "Here's a visual representation:\n\n" + mermaidContent,
-            isUser: false,
-            accentColor: "var(--primary)",
-            isMarkdown: true
+          isUser: false,
+          accentColor: "var(--primary)",
+          isMarkdown: true
           }];
         }
         
@@ -566,7 +566,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           }];
         }
       });
-      setIsLoading(false);
+        setIsLoading(false);
     } else if (data.type === 'complete') {
       // Response is complete
       setIsLoading(false);
@@ -991,6 +991,13 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                       isUser={message.isUser}
                       accentColor={message.accentColor}
                       isMarkdown={message.isMarkdown}
+                      conversationContext={{
+                        conversationId: currentConversationId || '',
+                        courseId: selectedCourse?.id || '',
+                        moduleId: selectedModule?.id || '',
+                        messages: messages,
+                        title: currentConversationTitle
+                      }}
                     />
                   ))}
                   
@@ -1007,8 +1014,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                             <div className="w-2.5 h-2.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
                           </div>
                         </div>
-                      </div>
-                    </div>
+                  </div>
+                </div>
                   )}
                   
                   <div ref={endOfMessagesRef} />
@@ -1071,8 +1078,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
               refreshTrigger={historyRefreshTrigger}
             />
           )}
-        </div>
-      </div>
+              </div>
+                          </div>
     </div>
   );
 }
