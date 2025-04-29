@@ -33,6 +33,35 @@ const extractImgGenTags = (content: string): { prompt: string, index: number, ra
   return tags;
 };
 
+// Helper to remove mermaid code blocks from markdown content but keep their positions for rendering
+const extractAndRemoveMermaidBlocks = (content: string): { 
+  cleanContent: string, 
+  mermaidDiagrams: { code: string, placeholder: string }[] 
+} => {
+  const mermaidBlocks: { code: string, placeholder: string }[] = [];
+  const mermaidPattern = /```mermaid\n([\s\S]*?)```/g;
+  
+  // Replace mermaid blocks with custom placeholders that we can render separately
+  let cleanContent = content;
+  let match;
+  let index = 0;
+  
+  while ((match = mermaidPattern.exec(content)) !== null) {
+    const fullMatch = match[0]; // The entire mermaid block
+    const code = match[1].trim(); // Just the mermaid code
+    const placeholder = `<mermaid-diagram-${index}></mermaid-diagram-${index}>`;
+    
+    // Replace the mermaid block with the placeholder
+    cleanContent = cleanContent.replace(fullMatch, placeholder);
+    
+    // Store the mermaid code and its placeholder for later rendering
+    mermaidBlocks.push({ code, placeholder });
+    index++;
+  }
+  
+  return { cleanContent, mermaidDiagrams: mermaidBlocks };
+};
+
 // Custom hook to manage image generation
 function useImageGen(
   content: string, 
@@ -234,24 +263,21 @@ export const Message: FC<MessageProps> = ({
   // Use processed content from the hook which stays in sync with content changes
   const { imgGenTags, images, processedContent } = useImageGen(content, conversationContext);
 
+  // Extract and remove mermaid diagrams from content
+  const { cleanContent, mermaidDiagrams } = useMemo(() => {
+    if (!isMarkdown) return { cleanContent: processedContent, mermaidDiagrams: [] };
+    return extractAndRemoveMermaidBlocks(processedContent);
+  }, [processedContent, isMarkdown]);
+
   // For debugging
   useEffect(() => {
     console.log(`Message component received updated content (${content.length} chars):`);
     console.log(content.substring(0, 100) + (content.length > 100 ? '...' : ''));
     console.log(`Using processedContent (${processedContent.length} chars)`);
-  }, [content, processedContent]);
-  
-  // Mermaid diagram extraction (simple regex)
-  const mermaidDiagrams = useMemo(() => {
-    if (!isMarkdown) return [];
-    const mermaidPattern = /```mermaid\n([\s\S]*?)```/g;
-    const diagrams: string[] = [];
-    let match;
-    while ((match = mermaidPattern.exec(processedContent)) !== null) {
-      diagrams.push(match[1].trim());
+    if (mermaidDiagrams.length > 0) {
+      console.log(`Found ${mermaidDiagrams.length} mermaid diagrams to render`);
     }
-    return diagrams;
-  }, [processedContent, isMarkdown]);
+  }, [content, processedContent, mermaidDiagrams.length]);
 
   // If this is just a stored image message, render only the image
   if (storedImage) {
@@ -286,6 +312,57 @@ export const Message: FC<MessageProps> = ({
     );
   }
 
+  // Custom component to render markdown with mermaid placeholders replaced by actual diagrams
+  const CustomMarkdownWithDiagrams = () => {
+    // Split content by mermaid placeholders
+    const contentSegments = mermaidDiagrams.reduce((acc, diagram, index) => {
+      const parts = acc[acc.length - 1].split(diagram.placeholder);
+      if (parts.length === 2) {
+        // Replace the last segment with the first part
+        acc[acc.length - 1] = parts[0];
+        // Add a placeholder for the diagram
+        acc.push(`mermaid-diagram-${index}`);
+        // Add the second part as a new segment
+        acc.push(parts[1]);
+      }
+      return acc;
+    }, [cleanContent]);
+
+    return (
+      <>
+        {contentSegments.map((segment, index) => {
+          // Check if this is a mermaid diagram placeholder
+          if (segment.startsWith('mermaid-diagram-')) {
+            const diagramIndex = parseInt(segment.split('-').pop() || '0', 10);
+            const diagram = mermaidDiagrams[diagramIndex];
+            if (diagram) {
+              return (
+                <div key={`mermaid-diagram-${index}`} className="my-4 flex justify-center w-full">
+                  <div className="w-full max-w-4xl border border-gray-200 rounded-lg bg-white shadow-md p-4 flex items-center justify-center min-h-[400px] h-full">
+                    <React.Suspense fallback={
+                      <div className="flex items-center space-x-2 w-full justify-center min-h-[400px]">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                        <span className="text-sm text-gray-500">Generating diagram...</span>
+                      </div>
+                    }>
+                      <MermaidDiagram chart={diagram.code} />
+                    </React.Suspense>
+                  </div>
+                </div>
+              );
+            }
+          }
+          // Otherwise render markdown for this segment
+          return segment && (
+            <div key={`markdown-${index}`} className="prose prose-base max-w-none prose-headings:font-bold prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-hr:my-4 prose-ul:pl-5 prose-ol:pl-5">
+              <ReactMarkdown>{segment}</ReactMarkdown>
+            </div>
+          );
+        })}
+      </>
+    );
+  };
+
   // Render message with content, images, and diagrams
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-center'} mb-4 px-4 sm:px-8 md:px-12 lg:px-20`}>
@@ -301,11 +378,9 @@ export const Message: FC<MessageProps> = ({
             : 'bg-gray-100 text-gray-800'
         }`}
       >
-        {/* Markdown content */}
+        {/* Markdown content with mermaid diagrams */}
         {isMarkdown && processedContent && (
-          <div className="prose prose-base max-w-none prose-headings:font-bold prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-hr:my-4 prose-ul:pl-5 prose-ol:pl-5">
-            <ReactMarkdown>{processedContent}</ReactMarkdown>
-          </div>
+          <CustomMarkdownWithDiagrams />
         )}
         
         {/* Plain text content */}
@@ -338,22 +413,6 @@ export const Message: FC<MessageProps> = ({
             </div>
           );
         })}
-        
-        {/* Mermaid diagrams */}
-        {mermaidDiagrams.map((chart, index) => (
-          <div key={`mermaid-diagram-${index}`} className="my-4 flex justify-center w-full">
-            <div className="w-full max-w-4xl border border-gray-200 rounded-lg bg-white shadow-md p-4 flex items-center justify-center min-h-[400px] h-full">
-              <React.Suspense fallback={
-                <div className="flex items-center space-x-2 w-full justify-center min-h-[400px]">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                  <span className="text-sm text-gray-500">Generating diagram...</span>
-                </div>
-              }>
-                <MermaidDiagram chart={chart} />
-              </React.Suspense>
-            </div>
-          </div>
-        ))}
       </div>
       {isUser && (
         <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center ml-3 mt-0.5">

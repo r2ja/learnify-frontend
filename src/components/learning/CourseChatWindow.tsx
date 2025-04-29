@@ -123,6 +123,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState("");
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
+  const [showCourseOverview, setShowCourseOverview] = useState(false);
+  const [isGeneratingOverview, setIsGeneratingOverview] = useState(false);
   
   // Add state for learning profile and user language
   const [userLanguage, setUserLanguage] = useState<string>("english");
@@ -314,6 +316,10 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     if (!sessionId) {
       setSessionId(uuidv4());
     }
+    
+    // Reset overview state when course changes
+    setShowCourseOverview(false);
+    setIsGeneratingOverview(false);
   }, [selectedCourse, selectedModule]);
 
   // Scroll to bottom when messages change
@@ -582,6 +588,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       
       // Response is complete
       setIsLoading(false);
+      setIsGeneratingOverview(false);
       setResponseComplete(true); // Mark response as complete to trigger saving
       
       // If this is the first user message, update the title with the first few words
@@ -608,6 +615,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         }
       ]);
       setIsLoading(false);
+      setIsGeneratingOverview(false);
       setResponseComplete(true); // Save even on error
     } else if (data.type === 'reasoning') {
       // Just log reasoning messages for debugging
@@ -863,6 +871,43 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     fetchUserLearningProfile();
   }, [user, loadingUser]);
 
+  const handleGenerateCourseOverview = () => {
+    if (!selectedCourse || !socket || !isConnected || !user) {
+      console.error("Cannot generate course overview: missing required data");
+      return;
+    }
+
+    // Set UI state
+    setIsGeneratingOverview(true);
+    setShowCourseOverview(true);
+    setIsInitialState(false);
+
+    // Prepare the user message for requesting an overview
+    const overviewPrompt = `Generate a comprehensive overview of the ${selectedCourse.title} course that is tailored to my learning style. Include the main topics, key concepts, and a suggested learning path. Present this in a well-structured format with clear sections.`;
+
+    // Add the user message to the chat
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      content: overviewPrompt,
+      isUser: true,
+      accentColor: "var(--primary)",
+    };
+
+    setMessages([
+      {
+        id: '1',
+        content: `Welcome to ${selectedCourse.title}! I'll generate a personalized overview of this course based on your learning profile.`,
+        isUser: false,
+        accentColor: "var(--primary)",
+        isMarkdown: true
+      },
+      userMessage
+    ]);
+
+    // Send the message to WebSocket
+    sendMessageToWebSocket(overviewPrompt);
+  };
+
   return (
     <div className="relative flex h-full w-full overflow-hidden">
       <BackgroundPaths />
@@ -1013,10 +1058,46 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                   </motion.h2>
 
                   {selectedCourse && (
-                  <SuggestedQuestions 
-                      questions={suggestedQuestions} 
-                      onQuestionClick={handleSendMessage} 
-                    />
+                    <div className="w-full max-w-xl flex flex-col items-center gap-8">
+                      <motion.div
+                        className="w-full"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4, duration: 1 }}
+                      >
+                        <button
+                          onClick={handleGenerateCourseOverview}
+                          className="w-full bg-[var(--primary)] text-white py-4 px-6 rounded-xl font-medium text-lg shadow-md hover:shadow-lg transition-all hover:bg-[var(--primary-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/50"
+                          disabled={isGeneratingOverview || !isConnected}
+                        >
+                          {isGeneratingOverview ? (
+                            <div className="flex items-center justify-center gap-3">
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                              <span>Generating Course Overview...</span>
+                            </div>
+                          ) : (
+                            <>Start Course</>
+                          )}
+                        </button>
+                        <p className="text-gray-500 text-sm text-center mt-3">
+                          Generate a personalized course overview based on your learning style
+                        </p>
+                      </motion.div>
+                      
+                      <div className="relative w-full pt-6">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-gray-300"></div>
+                        </div>
+                        <div className="relative flex justify-center">
+                          <span className="bg-[var(--background)] px-4 text-sm text-gray-500">or ask a specific question</span>
+                        </div>
+                      </div>
+                      
+                      <SuggestedQuestions 
+                        questions={suggestedQuestions} 
+                        onQuestionClick={handleSendMessage} 
+                      />
+                    </div>
                   )}
                 </motion.div>
               ) : (
@@ -1056,8 +1137,21 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                             <div className="w-2.5 h-2.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
                           </div>
                         </div>
-                  </div>
-                </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Show suggested questions after overview is generated */}
+                  {showCourseOverview && !isLoading && !isGeneratingOverview && (
+                    <div className="flex flex-col items-center w-full mt-6 mb-8">
+                      <h3 className="text-lg font-medium text-gray-800 mb-3">
+                        What would you like to learn more about?
+                      </h3>
+                      <SuggestedQuestions 
+                        questions={suggestedQuestions} 
+                        onQuestionClick={handleSendMessage} 
+                      />
+                    </div>
                   )}
                   
                   <div ref={endOfMessagesRef} />

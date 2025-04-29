@@ -100,7 +100,7 @@ export function Navbar() {
           <div className="relative group">
             <button 
               onClick={handleChatClick}
-              className={`w-10 h-10 rounded-lg ${pathname === '/chat' ? 'bg-white text-[var(--sidebar)]' : 'text-gray-400 hover:text-white hover:bg-white/10'} flex items-center justify-center transition-colors`}
+              className={`w-10 h-10 rounded-lg ${pathname === '/chat' ? 'bg-white text-[var(--sidebar)]' : 'text-gray-400 hover:text-white'} flex items-center justify-center transition-colors`}
               aria-label="Chat"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -108,13 +108,7 @@ export function Navbar() {
               </svg>
             </button>
             
-            {/* Hover tooltip to explain the requirement */}
-            <div className="absolute left-full ml-2 p-2 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-48 pointer-events-none">
-              <div className="absolute left-[-6px] top-3 w-0 h-0 border-t-[6px] border-b-[6px] border-r-[6px] border-transparent border-r-gray-800"></div>
-              {hasEnrolledCourses 
-                ? "Ask questions about your courses" 
-                : "Enroll in a course to use the chat assistant"}
-            </div>
+    
           </div>
         </div>
         
