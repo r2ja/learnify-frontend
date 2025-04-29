@@ -139,16 +139,57 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   const moduleDropdownRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // Initialize websocket connection
+  useEffect(() => {
+    // Create WebSocket connection
+    const ws = new WebSocket('ws://127.0.0.1:8765');
+    
+    ws.onopen = () => {
+      console.log('WebSocket connection established');
+      setIsConnected(true);
+    };
+    
+    ws.onclose = () => {
+      console.log('WebSocket connection closed');
+      setIsConnected(false);
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setIsConnected(false);
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        console.log('WebSocket message received:', event.data);
+        const data = JSON.parse(event.data);
+        console.log('Parsed WebSocket message:', data);
+        handleWebSocketMessage(data);
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+    
+    setSocket(ws);
+    
+    // Clean up the websocket connection when component unmounts
+    return () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+  }, []);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    const handleClickOutside = (event: MouseEvent) => {
       if (courseDropdownRef.current && !courseDropdownRef.current.contains(event.target as Node)) {
         setIsCourseDropdownOpen(false);
       }
       if (moduleDropdownRef.current && !moduleDropdownRef.current.contains(event.target as Node)) {
         setIsModuleDropdownOpen(false);
       }
-    }
+    };
     
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -160,7 +201,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   useEffect(() => {
     if (loadingUser || !user) return;
     
-    async function fetchEnrolledCourses() {
+    const fetchEnrolledCourses = async () => {
       setIsLoadingCourses(true);
       try {
         console.log(`Fetching enrolled courses for user: ${user!.id}`);
@@ -229,45 +270,10 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       } finally {
         setIsLoadingCourses(false);
       }
-    }
+    };
     
     fetchEnrolledCourses();
   }, [user, loadingUser]);
-
-  // Initialize websocket connection
-  useEffect(() => {
-    // Create WebSocket connection
-    const ws = new WebSocket('ws://127.0.0.1:8765');
-    
-    ws.onopen = () => {
-      console.log('WebSocket connection established');
-      setIsConnected(true);
-    };
-    
-    ws.onclose = () => {
-      console.log('WebSocket connection closed');
-      setIsConnected(false);
-    };
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setIsConnected(false);
-    };
-    
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      handleWebSocketMessage(data);
-    };
-    
-    setSocket(ws);
-    
-    // Clean up the websocket connection when component unmounts
-    return () => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-    };
-  }, []);
 
   // Initialize with welcome message when course/chapter changes
   useEffect(() => {
@@ -493,81 +499,87 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   }, [responseComplete, isLoading, messages]);
 
   const handleWebSocketMessage = (data: any) => {
+    console.log(`Processing WebSocket message type: ${data.type}`);
+    
     if (data.type === 'text') {
-      // For text messages, update the last bot message or create a new one
-      setMessages(prevMessages => {
-        if (prevMessages.length === 0) {
+      // Log the raw content to debug any special characters
+      console.log(`Text message content (raw):`, JSON.stringify(data.content));
+      
+      // Process the content to handle newlines properly
+      const processedContent = data.content.replace(/\\n/g, '\n');
+      
+      setMessages(prev => {
+        if (prev.length === 0) {
           return [{
             id: Date.now().toString(),
-            content: data.content,
+            content: processedContent,
             isUser: false,
             accentColor: "var(--primary)",
             isMarkdown: true
           }];
         }
-        
-        const lastMessage = prevMessages[prevMessages.length - 1];
-        
+
+        const lastMessage = prev[prev.length - 1];
         // If the last message is from the bot, append to it
         if (!lastMessage.isUser) {
-          const updatedMessages = [...prevMessages];
-          updatedMessages[prevMessages.length - 1] = {
+          const updatedMessages = [...prev];
+          // Create the new content by properly joining with the existing content
+          const updatedContent = lastMessage.content + processedContent;
+          console.log('Updated message content:', updatedContent.substring(0, 50) + (updatedContent.length > 50 ? '...' : ''));
+          
+          updatedMessages[prev.length - 1] = {
             ...lastMessage,
-            content: lastMessage.content + data.content,
+            content: updatedContent,
             isMarkdown: true
           };
           return updatedMessages;
         } else {
           // Otherwise create a new bot message
-          return [...prevMessages, {
+          return [...prev, {
             id: Date.now().toString(),
-            content: data.content,
+            content: processedContent,
             isUser: false,
             accentColor: "var(--primary)",
             isMarkdown: true
           }];
         }
       });
-      setIsLoading(false);
     } else if (data.type === 'mermaid_gen') {
-      // Handle mermaid diagrams with proper markdown
-      const mermaidContent = `\`\`\`mermaid\n${data.content}\n\`\`\``;
-      
-      setMessages(prevMessages => {
-        if (prevMessages.length === 0) {
-          return [{
+      console.log(`Mermaid diagram received with content length: ${data.content.length}`);
+      // Handle mermaid diagrams
+      setMessages(prev => [
+        ...prev,
+        {
           id: Date.now().toString(),
-            content: "Here's a visual representation:\n\n" + mermaidContent,
+          content: '```mermaid\n' + data.content + '\n```',
           isUser: false,
           accentColor: "var(--primary)",
           isMarkdown: true
-          }];
         }
+      ]);
+      // Keep loading state active until complete
+    } else if (data.type === 'complete') {
+      console.log('Received complete message, finalizing chat');
+      
+      // If the last message in the chat is from the user and we haven't received
+      // any response content yet, add a default response
+      setMessages(prev => {
+        const lastMessage = prev.length > 0 ? prev[prev.length - 1] : null;
         
-        const lastMessage = prevMessages[prevMessages.length - 1];
-        
-        // If the last message is from the bot, append the diagram to it
-        if (!lastMessage.isUser) {
-          const updatedMessages = [...prevMessages];
-          updatedMessages[prevMessages.length - 1] = {
-            ...lastMessage,
-            content: lastMessage.content + "\n\n" + mermaidContent,
-            isMarkdown: true
-          };
-          return updatedMessages;
-        } else {
-          // Otherwise create a new message with just the diagram
-          return [...prevMessages, {
+        // If the last message is from the user, we need to add a response
+        if (lastMessage && lastMessage.isUser) {
+          console.log('Adding default response since no text was received');
+          return [...prev, {
             id: Date.now().toString(),
-            content: "Here's a visual representation:\n\n" + mermaidContent,
+            content: "Sorry, I couldn't generate a response. Please try asking again.",
             isUser: false,
             accentColor: "var(--primary)",
             isMarkdown: true
           }];
         }
+        return prev;
       });
-        setIsLoading(false);
-    } else if (data.type === 'complete') {
+      
       // Response is complete
       setIsLoading(false);
       setResponseComplete(true); // Mark response as complete to trigger saving
@@ -584,9 +596,10 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         }
       }
     } else if (data.type === 'error') {
+      console.error(`Error received from WebSocket: ${data.content}`);
       // Handle error
-      setMessages(prevMessages => [
-        ...prevMessages,
+      setMessages(prev => [
+        ...prev,
         {
           id: Date.now().toString(),
           content: `Error: ${data.content}`,
@@ -596,6 +609,12 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       ]);
       setIsLoading(false);
       setResponseComplete(true); // Save even on error
+    } else if (data.type === 'reasoning') {
+      // Just log reasoning messages for debugging
+      console.log(`Reasoning message received: ${JSON.stringify(data).substring(0, 100)}...`);
+      // Don't update UI for reasoning messages
+    } else {
+      console.log(`Unknown message type received: ${data.type}`);
     }
   };
 
@@ -638,10 +657,33 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         session_id: sessionId,
         language: userLanguage,
         // Send the entire conversation history for context
-        messages: messages.map(msg => ({
-          content: msg.content,
-          isUser: msg.isUser
-        })),
+        messages: messages.map(msg => {
+          // Check if the message content is JSON with imageBase64 data
+          try {
+            const parsed = JSON.parse(msg.content);
+            if (parsed && parsed.imageBase64) {
+              // Replace with a placeholder instead of sending the full base64 data
+              return {
+                content: "[Image]", // Simple placeholder for images
+                isUser: msg.isUser
+              };
+            }
+          } catch (e) {
+            // Not JSON, continue with normal processing
+          }
+          
+          // Also filter out any img_gen tags to prevent regeneration
+          let filteredContent = msg.content;
+          if (!msg.isUser) {
+            // Remove any img_gen tags that might trigger image generation
+            filteredContent = filteredContent.replace(/<img_gen(?:\:description)?>([\s\S]*?)(?:<\/img_gen>|$)/g, '[Image Placeholder]');
+          }
+          
+          return {
+            content: filteredContent,
+            isUser: msg.isUser
+          };
+        }),
         // Send the user's learning profile fields explicitly
         // These should match the fields in your learning_profile database table
         processingStyle: learningProfile.processingStyle,

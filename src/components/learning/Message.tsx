@@ -10,19 +10,14 @@ interface MessageProps {
   isUser: boolean;
   accentColor?: string;
   isMarkdown?: boolean;
+  conversationContext?: {
+    conversationId: string;
+    courseId: string;
+    moduleId: string;
+    messages: any[];
+    title?: string;
+  }
 }
-
-// Helper to determine if a content block might contain a mermaid diagram
-const containsMermaidDiagram = (content: string): boolean => {
-  // Look for common Mermaid diagram identifiers
-  const mermaidIdentifiers = [
-    'graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 
-    'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie'
-  ];
-  
-  const lowerContent = content.toLowerCase();
-  return mermaidIdentifiers.some(id => lowerContent.includes(id));
-};
 
 // Helper to extract img_gen tags (handles missing closing tag)
 const extractImgGenTags = (content: string): { prompt: string, index: number, raw: string }[] => {
@@ -38,32 +33,6 @@ const extractImgGenTags = (content: string): { prompt: string, index: number, ra
   return tags;
 };
 
-// Helper to remove img_gen tags and replace with placeholders
-const processImgGenTags = (content: string): { processedContent: string, imgGenTags: { prompt: string, index: number, raw: string }[] } => {
-  const tags: { prompt: string, index: number, raw: string }[] = [];
-  // Updated pattern to handle both <img_gen> and <img_gen:description> formats
-  const imgGenPattern = /<img_gen(?:\:description)?>([\s\S]*?)(?:<\/img_gen>|$)/g;
-  let matchCount = 0;
-  
-  // Replace img_gen tags with placeholders
-  const processedContent = content.replace(imgGenPattern, (match, prompt) => {
-    const trimmedPrompt = prompt.trim();
-    if (trimmedPrompt) {
-      tags.push({ prompt: trimmedPrompt, index: matchCount, raw: match });
-      return `__IMAGE_${matchCount++}__`;
-    }
-    return '';
-  });
-  
-  return { processedContent, imgGenTags: tags };
-};
-
-// Helper to remove img_gen tags from content
-const removeImgGenTags = (content: string): string => {
-  // Remove <img_gen>...</img_gen> or <img_gen>... (no closing tag)
-  return content.replace(/<img_gen(?:\:description)?>([\s\S]*?)(?:<\/img_gen>|$)/g, '').replace(/__IMAGE_\d+__/g, '');
-};
-
 // Custom hook to manage image generation
 function useImageGen(
   content: string, 
@@ -75,13 +44,32 @@ function useImageGen(
     title?: string;
   }
 ) {
-  // First process img_gen tags, replacing with placeholders
-  const { processedContent: initialProcessedContent, imgGenTags } = useMemo(() => 
-    processImgGenTags(content), [content]
-  );
+  // Check if the content already contains a stored image
+  const storedImage = useMemo(() => {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && parsed.imageBase64) {
+        return parsed.imageBase64;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }, [content]);
+
+  // Only extract img_gen tags if there's no stored image
+  const imgGenTags = useMemo(() => 
+    storedImage ? [] : extractImgGenTags(content)
+  , [content, storedImage]);
   
   const [images, setImages] = useState<{ [key: number]: string | 'loading' | 'error' }>({});
-  const [processedContent] = useState<string>(initialProcessedContent);
+  const [processedContent, setProcessedContent] = useState(content);
+  
+  // Always update processedContent when content changes
+  // This ensures the component stays in sync with parent updates
+  useEffect(() => {
+    setProcessedContent(content);
+  }, [content]);
   
   // Reference to track if images were stored in the database
   const storedImages = useRef<Set<number>>(new Set());
@@ -89,11 +77,7 @@ function useImageGen(
   useEffect(() => {
     if (imgGenTags.length === 0) return;
     
-    console.log(`Found ${imgGenTags.length} image generation tags`);
-    
     imgGenTags.forEach(({ prompt, index }) => {
-      console.log(`Processing image generation tag ${index}: ${prompt.substring(0, 30)}...`);
-      
       if (!images[index]) {
         // Set loading state immediately
         setImages(prev => ({ ...prev, [index]: 'loading' }));
@@ -112,7 +96,7 @@ function useImageGen(
           
           // Save the image to the database only once
           if (!storedImages.current.has(index) && conversationContext?.conversationId) {
-            saveImageToConversation(imageUrl);
+            saveGeneratedImageToDatabase(imageUrl, index);
             storedImages.current.add(index);
           }
         }).catch((error) => {
@@ -123,15 +107,15 @@ function useImageGen(
     });
   }, [imgGenTags, images, conversationContext?.conversationId]);
 
-  // Save image to conversation - only if we have context
-  const saveImageToConversation = (imageUrl: string) => {
+  // Save image to conversation and remove img_gen tags from content
+  const saveGeneratedImageToDatabase = (imageUrl: string, index: number) => {
     if (!conversationContext || !conversationContext.conversationId) {
       console.log('No conversation context available for saving image');
       return;
     }
 
     try {
-      // Add a new message with just the image
+      // Create a new message with just the image
       const newImageMessage = {
         id: `img-${Date.now().toString()}`,
         content: JSON.stringify({ imageBase64: imageUrl }),
@@ -141,17 +125,36 @@ function useImageGen(
         timestamp: new Date().toISOString()
       };
       
-      // Save the current messages but with processed content
-      // This ensures img_gen tags are converted to placeholders
-      const currentMessages = conversationContext.messages.map(msg => {
-        if (msg.content === content) {
-          return { ...msg, content: processedContent };
-        }
-        return msg;
-      });
-      
       // Add the new message with the image
-      const updatedMessages = [...currentMessages, newImageMessage];
+      const updatedMessages = [...conversationContext.messages, newImageMessage];
+      
+      // Update the original message in the database to remove the img_gen tag
+      const currentMessageIndex = conversationContext.messages.length - 1;
+      const currentMessage = conversationContext.messages[currentMessageIndex];
+      
+      if (currentMessage) {
+        // Remove the img_gen tag that was processed from content
+        const tag = imgGenTags.find(tag => tag.index === index);
+        if (tag) {
+          // Create the updated message with img_gen tags removed
+          const updatedContent = currentMessage.content.replace(tag.raw, '');
+          const updatedCurrentMessage = {
+            ...currentMessage,
+            content: updatedContent
+          };
+          
+          // Update the current message with tags removed
+          updatedMessages[currentMessageIndex] = updatedCurrentMessage;
+          
+          // Also update local state for rendering
+          setProcessedContent(prev => {
+            const newContent = prev.replace(tag.raw, '');
+            console.log('Updated processedContent after removing img_gen:', 
+                       newContent.substring(0, 50) + (newContent.length > 50 ? '...' : ''));
+            return newContent;
+          });
+        }
+      }
       
       // Save using the existing conversation endpoint
       fetch('/api/conversations', {
@@ -167,7 +170,7 @@ function useImageGen(
       })
       .then(response => {
         if (!response.ok) throw new Error(`Failed to save: ${response.status}`);
-        console.log('Image saved successfully');
+        console.log('Image saved successfully and img_gen tag removed');
       })
       .catch(error => console.error('Error saving image:', error));
       
@@ -179,166 +182,79 @@ function useImageGen(
   return { imgGenTags, images, processedContent };
 }
 
-// Helper to remove mermaid code blocks from markdown
-const removeMermaidBlocks = (content: string): string => {
-  // Also remove any 'MERMAID_0' text that may appear in the markdown
-  return content.replace(/```mermaid[\s\S]*?```/g, '').replace(/MERMAID_\d+/g, '');
-};
+// Custom hook to handle mermaid diagrams
+function useMermaidDiagrams(content: string, isMarkdown: boolean) {
+  return useMemo(() => {
+    if (!isMarkdown) return { charts: [] };
+    
+    // Extract mermaid diagrams from the content
+    const mermaidPattern = /```mermaid\n([\s\S]*?)```/g;
+    const charts: string[] = [];
+    let match;
+    
+    while ((match = mermaidPattern.exec(content)) !== null) {
+      charts.push(match[1].trim());
+    }
+    
+    return { charts };
+  }, [content, isMarkdown]);
+}
 
-export const Message: FC<MessageProps & {
-  conversationContext?: {
-    conversationId: string;
-    courseId: string;
-    moduleId: string;
-    messages: any[];
-    title?: string;
+// Helper to check if content is a JSON-encoded image
+function parseStoredImage(content: string): string | null {
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed && parsed.imageBase64) {
+      return parsed.imageBase64;
+    }
+  } catch (e) {
+    // Not JSON or not an image
   }
-}> = ({ 
+  return null;
+}
+
+// Simplified Message component
+export const Message: FC<MessageProps> = ({ 
   content, 
   isUser, 
   accentColor = 'var(--primary)',
   isMarkdown = false,
   conversationContext
 }) => {
-  // Parse content if it's JSON to check for stored imageBase64
-  const [parsedContent, storedImage] = useMemo(() => {
+  // Parse content for stored images (JSON format with imageBase64)
+  const storedImage = useMemo(() => {
     try {
-      // Try to parse as JSON
       const parsed = JSON.parse(content);
-      // Check if it contains imageBase64 property
-      if (parsed && parsed.imageBase64) {
-        return ["", parsed.imageBase64];
-      }
-      // If it's JSON but doesn't have imageBase64, return the stringified version
-      return [content, null];
+      return parsed && parsed.imageBase64 ? parsed.imageBase64 : null;
     } catch (e) {
-      // Not JSON, return original content
-      return [content, null];
+      return null;
     }
   }, [content]);
+  
+  // Use processed content from the hook which stays in sync with content changes
+  const { imgGenTags, images, processedContent } = useImageGen(content, conversationContext);
 
-  // Image generation logic
-  const { imgGenTags, images, processedContent } = useImageGen(parsedContent, conversationContext);
-
-  // Extract and process Mermaid diagrams from content
-  const { processedContent: mermaidProcessedContent, mermaidCharts } = useMemo(() => {
-    if (!isMarkdown) {
-      return { processedContent: processedContent, mermaidCharts: [] };
-    }
-    // Simple, focused regex for extracting Mermaid code blocks
+  // For debugging
+  useEffect(() => {
+    console.log(`Message component received updated content (${content.length} chars):`);
+    console.log(content.substring(0, 100) + (content.length > 100 ? '...' : ''));
+    console.log(`Using processedContent (${processedContent.length} chars)`);
+  }, [content, processedContent]);
+  
+  // Mermaid diagram extraction (simple regex)
+  const mermaidDiagrams = useMemo(() => {
+    if (!isMarkdown) return [];
     const mermaidPattern = /```mermaid\n([\s\S]*?)```/g;
-    const charts: string[] = [];
-    let matchCount = 0;
-    let processedText = processedContent.replace(mermaidPattern, (_, chartContent) => {
-      const placeholder = `__MERMAID_${matchCount++}__`;
-      charts.push(chartContent.trim());
-      return placeholder;
-    });
-    return { processedContent: processedText, mermaidCharts: charts };
+    const diagrams: string[] = [];
+    let match;
+    while ((match = mermaidPattern.exec(processedContent)) !== null) {
+      diagrams.push(match[1].trim());
+    }
+    return diagrams;
   }, [processedContent, isMarkdown]);
 
-  // Final content with img_gen tags and mermaid code blocks replaced with placeholders
-  const finalContent = useMemo(() => {
-    if (!isMarkdown) return mermaidProcessedContent;
-    
-    // The content already has placeholders for images and mermaid diagrams
-    return mermaidProcessedContent;
-  }, [mermaidProcessedContent, isMarkdown]);
-
-  // Render generated images in place of placeholders
-  const renderGeneratedImages = () => {
-    if (imgGenTags.length === 0) return null;
-    
-    console.log(`Rendering ${imgGenTags.length} image placeholders`);
-    
-    // First, render all image placeholders regardless of whether they're in the content
-    // This ensures loading indicators appear even if placeholders aren't correctly inserted
-    return imgGenTags.map(({ prompt, index }) => {
-      const image = images[index];
-      const placeholder = `__IMAGE_${index}__`;
-      
-      console.log(`Rendering image ${index}: ${image === 'loading' ? 'LOADING' : image === 'error' ? 'ERROR' : 'READY'}`);
-      
-      return (
-        <div key={`img-gen-${index}`} className="my-4 flex justify-center w-full" id={placeholder}>
-          {image === 'loading' && (
-            <div className="flex flex-col items-center space-y-3 w-full justify-center min-h-[200px] p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-              <span className="text-sm text-gray-500">Generating image from prompt...</span>
-              <div className="text-xs text-gray-400 max-w-md overflow-hidden text-ellipsis">{prompt.substring(0, 50)}...</div>
-            </div>
-          )}
-          {image === 'error' && (
-            <div className="flex items-center justify-center w-full min-h-[200px] text-red-500 p-4 border border-red-200 rounded-lg bg-red-50">
-              <div className="text-center">
-                <p className="font-medium">Image generation failed</p>
-                <p className="text-sm mt-2">There was an error creating your image</p>
-              </div>
-            </div>
-          )}
-          {typeof image === 'string' && image !== 'loading' && image !== 'error' && (
-            <img src={image} alt="Generated visual representation" className="rounded-lg max-w-full max-h-[500px] border shadow" />
-          )}
-        </div>
-      );
-    });
-  };
-
-  // Render stored image from the parsed content
-  const renderStoredImage = () => {
-    if (!storedImage) return null;
-    return (
-      <div className="my-4 flex justify-center w-full">
-        <img 
-          src={storedImage} 
-          alt="Generated visual" 
-          className="rounded-lg max-w-full max-h-[500px] border shadow" 
-        />
-      </div>
-    );
-  };
-
-  // Helper to render mermaid diagrams with placeholders
-  const renderMermaidDiagrams = () => {
-    if (mermaidCharts.length === 0) return null;
-    return mermaidCharts.map((chart, index) => (
-      <div key={`mermaid-diagram-${index}`} className="my-4 flex justify-center w-full">
-        <div
-          className="w-full max-w-4xl cursor-pointer border border-gray-200 rounded-lg bg-white shadow-md p-4 flex items-center justify-center min-h-[400px] h-full"
-          style={{ minHeight: 400 }}
-          onClick={() => { setModalChart(chart); setModalOpen(true); }}
-        >
-          <div className="w-full h-full flex items-center justify-center">
-            <React.Suspense fallback={<div className="flex items-center space-x-2 w-full justify-center min-h-[400px]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div><span className="text-sm text-gray-500">Generating diagram...</span></div>}>
-              <MermaidDiagram chart={chart} />
-            </React.Suspense>
-          </div>
-        </div>
-      </div>
-    ));
-  };
-
-  // Modal state for viewing diagrams
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalChart, setModalChart] = useState<string | null>(null);
-
-  // Modal for full-size diagram view
-  const renderModal = () => {
-    if (!modalOpen || !modalChart) return null;
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60" onClick={() => setModalOpen(false)}>
-        <div className="bg-white rounded-lg shadow-lg p-6 max-w-4xl w-full relative" onClick={e => e.stopPropagation()}>
-          <button className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 text-2xl" onClick={() => setModalOpen(false)}>&times;</button>
-          <div className="flex justify-center items-center w-full min-h-[480px]">
-            <MermaidDiagram chart={modalChart} />
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // If content is empty and there's a stored image, only render the image
-  if (finalContent.trim() === "" && storedImage) {
+  // If this is just a stored image message, render only the image
+  if (storedImage) {
     return (
       <div className={`flex ${isUser ? 'justify-end' : 'justify-center'} mb-4 px-4 sm:px-8 md:px-12 lg:px-20`}>
         {!isUser && (
@@ -353,7 +269,13 @@ export const Message: FC<MessageProps & {
               : 'bg-gray-100 text-gray-800'
           }`}
         >
-          {renderStoredImage()}
+          <div className="my-2 flex justify-center">
+            <img 
+              src={storedImage} 
+              alt="Generated visual" 
+              className="rounded-lg max-w-full max-h-[500px] border shadow" 
+            />
+          </div>
         </div>
         {isUser && (
           <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center ml-3 mt-0.5">
@@ -364,6 +286,7 @@ export const Message: FC<MessageProps & {
     );
   }
 
+  // Render message with content, images, and diagrams
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-center'} mb-4 px-4 sm:px-8 md:px-12 lg:px-20`}>
       {!isUser && (
@@ -378,20 +301,59 @@ export const Message: FC<MessageProps & {
             : 'bg-gray-100 text-gray-800'
         }`}
       >
-        <div className={`text-base ${!isMarkdown ? 'whitespace-pre-wrap' : ''}`}> 
-          {finalContent && (
-            <ReactMarkdown>
-              {finalContent}
-            </ReactMarkdown>
-          )}
-          {/* Render stored image if present */}
-          {renderStoredImage()}
-          {/* Render generated images in place of placeholders */}
-          {renderGeneratedImages()}
-          {/* Render Mermaid diagrams with placeholders */}
-          {renderMermaidDiagrams()}
-        </div>
-        {renderModal()}
+        {/* Markdown content */}
+        {isMarkdown && processedContent && (
+          <div className="prose prose-base max-w-none prose-headings:font-bold prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-hr:my-4 prose-ul:pl-5 prose-ol:pl-5">
+            <ReactMarkdown>{processedContent}</ReactMarkdown>
+          </div>
+        )}
+        
+        {/* Plain text content */}
+        {!isMarkdown && (
+          <div className="whitespace-pre-wrap text-base">{processedContent}</div>
+        )}
+        
+        {/* Image generation placeholders */}
+        {imgGenTags.map(({ prompt, index }) => {
+          const image = images[index];
+          return (
+            <div key={`img-gen-${index}`} className="my-4 flex justify-center w-full">
+              {image === 'loading' && (
+                <div className="flex flex-col items-center space-y-3 w-full justify-center min-h-[200px] p-4 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  <span className="text-sm text-gray-500">Generating image...</span>
+                </div>
+              )}
+              {image === 'error' && (
+                <div className="flex items-center justify-center w-full min-h-[200px] text-red-500 p-4 border border-red-200 rounded-lg bg-red-50">
+                  <div className="text-center">
+                    <p className="font-medium">Image generation failed</p>
+                    <p className="text-sm mt-2">There was an error creating your image</p>
+                  </div>
+                </div>
+              )}
+              {typeof image === 'string' && image !== 'loading' && image !== 'error' && (
+                <img src={image} alt="Generated visual" className="rounded-lg max-w-full max-h-[500px] border shadow" />
+              )}
+            </div>
+          );
+        })}
+        
+        {/* Mermaid diagrams */}
+        {mermaidDiagrams.map((chart, index) => (
+          <div key={`mermaid-diagram-${index}`} className="my-4 flex justify-center w-full">
+            <div className="w-full max-w-4xl border border-gray-200 rounded-lg bg-white shadow-md p-4 flex items-center justify-center min-h-[400px] h-full">
+              <React.Suspense fallback={
+                <div className="flex items-center space-x-2 w-full justify-center min-h-[400px]">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  <span className="text-sm text-gray-500">Generating diagram...</span>
+                </div>
+              }>
+                <MermaidDiagram chart={chart} />
+              </React.Suspense>
+            </div>
+          </div>
+        ))}
       </div>
       {isUser && (
         <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center ml-3 mt-0.5">
