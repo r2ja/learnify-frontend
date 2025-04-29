@@ -192,6 +192,10 @@ const coursesSlice = createSlice({
         withdrawal: null,
       };
     },
+    resetCoursesState: () => {
+      // Return initial state to completely reset
+      return initialState;
+    },
   },
   extraReducers: (builder) => {
     // fetchAllCourses reducers
@@ -303,5 +307,5 @@ const coursesSlice = createSlice({
   },
 });
 
-export const { setSelectedCourse, clearErrors } = coursesSlice.actions;
+export const { setSelectedCourse, clearErrors, resetCoursesState } = coursesSlice.actions;
 export default coursesSlice.reducer; 

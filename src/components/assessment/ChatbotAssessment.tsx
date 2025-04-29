@@ -19,7 +19,7 @@ interface LearningStyleInfo {
 
 export function ChatbotAssessment() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [responses, setResponses] = useState<string[]>([]); // Only validated responses
@@ -34,11 +34,48 @@ export function ChatbotAssessment() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // Track previous user to detect changes
+  const prevUserIdRef = useRef<string | undefined>(undefined);
+
+  // Reset state when user changes or logs out
+  useEffect(() => {
+    // If not authenticated or user changes, reset state
+    if (!isAuthenticated) {
+      console.log('User not authenticated, resetting assessment state');
+      resetAllState();
+      prevUserIdRef.current = undefined;
+      return;
+    }
+    
+    // User changed detection
+    const userId = user?.id;
+    const userChanged = userId !== prevUserIdRef.current;
+    
+    if (userId && userChanged) {
+      console.log('User changed, resetting assessment state for new user:', userId);
+      resetAllState();
+      prevUserIdRef.current = userId;
+    }
+  }, [isAuthenticated, user?.id]);
+
+  // Reset all component state
+  const resetAllState = () => {
+    setMessages([]);
+    setResponses([]);
+    setInput('');
+    setError(null);
+    setTestComplete(false);
+    setLearningStyle(null);
+    setHasExistingProfile(false);
+    setAssessmentStarted(false);
+    setCheckingProfile(true);
+  };
 
   // Check if user already has a learning profile
   useEffect(() => {
     const checkExistingProfile = async () => {
-      if (!user?.id) {
+      if (!isAuthenticated || !user?.id) {
         setCheckingProfile(false);
         return;
       }
@@ -89,12 +126,19 @@ export function ChatbotAssessment() {
       }
     };
 
-    checkExistingProfile();
-  }, [user]);
+    if (isAuthenticated && user?.id) {
+      checkExistingProfile();
+    } else {
+      setCheckingProfile(false);
+    }
+  }, [isAuthenticated, user?.id]);
 
   // Start the conversation when the user explicitly chooses to start the assessment
   const startConversation = async () => {
-    if (!user) return;
+    if (!isAuthenticated || !user) {
+      router.push('/auth/login');
+      return;
+    }
     
     try {
       setIsLoading(true);
@@ -127,6 +171,11 @@ export function ChatbotAssessment() {
 
   const handleSend = async (e: FormEvent) => {
     e.preventDefault();
+
+    if (!isAuthenticated || !user?.id) {
+      router.push('/auth/login');
+      return;
+    }
 
     if (input.trim().length < 5) {
       setError('Please provide a more detailed response (at least 5 characters).');
@@ -200,7 +249,7 @@ This information will help us personalize your learning experience.`,
         // Save the learning profile to the database only if the test is completely finished
         if (user?.id) {
           try {
-            await fetch(`/api/users/${user.id}/learning-profile`, {
+            const saveResponse = await fetch(`/api/users/${user.id}/learning-profile`, {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',
@@ -210,6 +259,10 @@ This information will help us personalize your learning experience.`,
                 assessmentDate: new Date(),
               }),
             });
+            
+            if (!saveResponse.ok) {
+              throw new Error('Failed to save learning profile');
+            }
             
             showToast('success', 'Learning profile saved successfully!');
           } catch (error) {
@@ -228,6 +281,11 @@ This information will help us personalize your learning experience.`,
   };
 
   const handleRetakeTest = async () => {
+    if (!isAuthenticated || !user?.id) {
+      router.push('/auth/login');
+      return;
+    }
+    
     // Reset the state
     setMessages([]);
     setResponses([]);
@@ -247,6 +305,11 @@ This information will help us personalize your learning experience.`,
   };
 
   const handleStartTest = () => {
+    if (!isAuthenticated || !user?.id) {
+      router.push('/auth/login');
+      return;
+    }
+
     if (!hasExistingProfile) {
       startConversation();
     } else {
@@ -264,6 +327,26 @@ This information will help us personalize your learning experience.`,
           <div className="flex flex-col items-center justify-center py-12">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[var(--primary)]"></div>
             <p className="mt-4 text-gray-500">Loading your learning profile...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated, show login prompt
+  if (!isAuthenticated) {
+    return (
+      <div className="w-full max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+        <div className="p-8 text-center">
+          <h2 className="text-2xl font-bold mb-6 text-[var(--primary)]">Learning Style Assessment</h2>
+          <div className="my-8">
+            <p className="text-lg mb-4">Please log in to take the learning style assessment.</p>
+            <button
+              onClick={() => router.push('/auth/login')}
+              className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-opacity-90"
+            >
+              Log In
+            </button>
           </div>
         </div>
       </div>
@@ -351,46 +434,32 @@ This information will help us personalize your learning experience.`,
         <div className="p-8 text-center">
           <h2 className="text-2xl font-bold mb-6 text-[var(--primary)]">Learning Style Assessment</h2>
           
-          {!user ? (
-            <div className="my-8">
-              <p className="text-lg mb-4">Please log in to take the learning style assessment.</p>
-              <button
-                onClick={() => router.push('/auth/login')}
-                className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-opacity-90"
-              >
-                Log In
-              </button>
-            </div>
-          ) : (
-            <>
-              <p className="text-gray-700 mb-8 max-w-2xl mx-auto">
-                Discover your learning preferences by taking our assessment. This will help us personalize your learning experience.
-                The assessment consists of 4 questions and takes about 5 minutes to complete.
-              </p>
-              
-              <div className="bg-gray-50 p-6 rounded-lg mb-8 max-w-2xl mx-auto">
-                <h3 className="font-semibold text-lg mb-2">Important Note</h3>
-                <p className="text-gray-600">
-                  To ensure accurate results, please complete the entire assessment in one session. 
-                  Your learning profile will only be updated after you've answered all questions.
-                </p>
-              </div>
-              
-              <button
-                onClick={handleStartTest}
-                className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-opacity-90 transition-colors"
-              >
-                Start Assessment
-              </button>
-              
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="ml-4 px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Return to Dashboard
-              </button>
-            </>
-          )}
+          <p className="text-gray-700 mb-8 max-w-2xl mx-auto">
+            Discover your learning preferences by taking our assessment. This will help us personalize your learning experience.
+            The assessment consists of 4 questions and takes about 5 minutes to complete.
+          </p>
+          
+          <div className="bg-gray-50 p-6 rounded-lg mb-8 max-w-2xl mx-auto">
+            <h3 className="font-semibold text-lg mb-2">Important Note</h3>
+            <p className="text-gray-600">
+              To ensure accurate results, please complete the entire assessment in one session. 
+              Your learning profile will only be updated after you've answered all questions.
+            </p>
+          </div>
+          
+          <button
+            onClick={handleStartTest}
+            className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-opacity-90 transition-colors"
+          >
+            Start Assessment
+          </button>
+          
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="ml-4 px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Return to Dashboard
+          </button>
         </div>
       </div>
     );

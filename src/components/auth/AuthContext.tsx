@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getCookie, deleteCookie } from 'cookies-next';
+import { persistor } from '@/lib/redux/store';
 
 interface User {
   id: string;
@@ -91,8 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (response.ok) {
+        // Purge persisted Redux state
+        await persistor.purge();
+        
+        // Clear user state
         setUser(null);
-        router.push('/auth/login');
+        
+        // Navigate to home page instead of login
+        router.push('/');
       }
     } catch (error) {
       console.error('Logout error:', error);

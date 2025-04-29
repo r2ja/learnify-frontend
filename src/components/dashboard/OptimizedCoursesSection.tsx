@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useUser } from '@/lib/hooks/useUser';
 import { useCourses, Course } from '@/lib/hooks/useCourses';
+import { useAuth } from '@/components/auth/AuthContext';
 
 // Interface definitions
 interface SyllabusItem {
@@ -225,7 +226,7 @@ const CourseItem = React.memo(function CourseItem({
   menuOpen: string | null;
   setMenuOpen: (id: string | null) => void;
   withdrawing: boolean;
-  menuRef: React.RefObject<HTMLDivElement>;
+  menuRef: React.RefObject<HTMLDivElement | null>;
 }) {
   return (
     <div 
@@ -304,12 +305,13 @@ const CourseItem = React.memo(function CourseItem({
 
 export default function OptimizedCoursesSection() {
   const { user, loading: userLoading } = useUser();
+  const { isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState('All Courses');
   const tabs = ['All Courses', 'Enrolled Courses'];
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   
   const router = useRouter();
   const { showToast } = useToast();
@@ -327,21 +329,49 @@ export default function OptimizedCoursesSection() {
     selectCourse,
     enrollCourse,
     withdrawCourse,
-    shouldRefreshData
+    shouldRefreshData,
+    resetCourses
   } = useCourses();
   
-  // Fetch courses when component mounts or when needed
+  // Previous user ID ref to track user changes
+  const prevUserIdRef = useRef<string | undefined>(undefined);
+  
+  // Effect to handle auth state changes
   useEffect(() => {
-    if (!userLoading && user?.id) {
-      if (shouldRefreshData('all')) {
-        fetchCourses(user.id);
-      }
-      
-      if (shouldRefreshData('enrolled')) {
-        fetchUserEnrolledCourses(user.id);
-      }
+    // If logged out, reset courses state
+    if (!isAuthenticated && prevUserIdRef.current) {
+      console.log('User logged out, resetting courses state');
+      resetCourses();
+      prevUserIdRef.current = undefined;
     }
-  }, [fetchCourses, fetchUserEnrolledCourses, shouldRefreshData, user?.id, userLoading]);
+  }, [isAuthenticated, resetCourses]);
+  
+  // Force fetch courses when user changes
+  useEffect(() => {
+    const userId = user?.id;
+    const userChanged = userId !== prevUserIdRef.current;
+    
+    // Always fetch fresh data when user changes or component mounts with a user
+    if (!userLoading && userId) {
+      if (userChanged) {
+        console.log('User changed, fetching fresh course data for:', userId);
+        // Reset previous state before fetching new data
+        resetCourses();
+        fetchCourses(userId);
+        fetchUserEnrolledCourses(userId);
+        prevUserIdRef.current = userId;
+      } else if (shouldRefreshData('all')) {
+        console.log('Cache expired, refreshing all courses for:', userId);
+        fetchCourses(userId);
+      } else if (shouldRefreshData('enrolled')) {
+        console.log('Cache expired, refreshing enrolled courses for:', userId);
+        fetchUserEnrolledCourses(userId);
+      }
+    } else if (!isAuthenticated && prevUserIdRef.current) {
+      // Reset previous user ID reference when logged out
+      prevUserIdRef.current = undefined;
+    }
+  }, [fetchCourses, fetchUserEnrolledCourses, shouldRefreshData, user?.id, userLoading, resetCourses, isAuthenticated]);
   
   // Get the appropriate courses and loading state based on active tab
   const { currentCourses, isLoading, currentError } = useMemo(() => ({

@@ -6,7 +6,8 @@ import {
   fetchCourseDetails,
   enrollInCourse,
   withdrawFromCourse,
-  setSelectedCourse 
+  setSelectedCourse,
+  resetCoursesState
 } from '@/lib/redux/slices/coursesSlice';
 
 export interface Course {
@@ -86,6 +87,11 @@ export function useCourses() {
     return Date.now() - lastFetchTime > 300000;
   }, [lastFetched]);
 
+  // Reset all courses state
+  const resetCourses = useCallback(() => {
+    dispatch(resetCoursesState());
+  }, [dispatch]);
+
   return {
     allCourses,
     enrolledCourses,
@@ -98,6 +104,7 @@ export function useCourses() {
     selectCourse,
     enrollCourse,
     withdrawCourse,
-    shouldRefreshData
+    shouldRefreshData,
+    resetCourses
   };
 } 
