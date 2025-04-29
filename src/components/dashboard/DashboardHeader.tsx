@@ -10,16 +10,34 @@ interface LearningProfile {
 }
 
 export function DashboardHeader() {
-  const { user } = useAuth();
+  const { user, loading: authLoading, refreshUserData } = useAuth();
   const [learningProfile, setLearningProfile] = useState<LearningProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Refresh user data when component mounts to ensure latest data
+  useEffect(() => {
+    const ensureUserData = async () => {
+      // Only refresh if user is null but we're not in loading state
+      // This indicates we need fresh data
+      if (!user && !authLoading) {
+        console.log('DashboardHeader: User data missing, refreshing...');
+        await refreshUserData();
+      }
+    };
+    
+    ensureUserData();
+  }, [user, authLoading, refreshUserData]);
+  
   useEffect(() => {
     const fetchLearningProfile = async () => {
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
       
       try {
+        setLoading(true);
         const response = await fetch(`/api/users/${user.id}/learning-profile`);
         
         if (response.ok) {
@@ -39,7 +57,7 @@ export function DashboardHeader() {
     };
     
     fetchLearningProfile();
-  }, [user]);
+  }, [user?.id]); // Only depend on user.id, not the entire user object
   
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -47,6 +65,22 @@ export function DashboardHeader() {
     if (hour < 18) return 'Good Afternoon';
     return 'Good Evening';
   };
+  
+  // Show loading state if either auth is loading or profile is loading
+  if (authLoading) {
+    return (
+      <div className="bg-darkTeal rounded-2xl p-6 text-white shadow-md animate-pulse">
+        <div className="flex items-center mb-3">
+          <div className="bg-[#33454b] rounded-full h-14 w-14 flex items-center justify-center mr-4">
+            <div className="w-8 h-8 bg-gray-300/30 rounded-full"></div>
+          </div>
+          <div className="h-8 w-48 bg-gray-300/30 rounded"></div>
+        </div>
+        <div className="h-4 w-full bg-gray-300/30 rounded my-2"></div>
+        <div className="h-4 w-3/4 bg-gray-300/30 rounded"></div>
+      </div>
+    );
+  }
   
   return (
     <div className="bg-darkTeal rounded-2xl p-6 text-white shadow-md">

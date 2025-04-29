@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getCookie, deleteCookie } from 'cookies-next';
 import { persistor } from '@/lib/redux/store';
@@ -31,12 +31,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   // Fetch current user data from the API
-  const fetchUserData = async (): Promise<User | null> => {
+  const fetchUserData = useCallback(async (): Promise<User | null> => {
     try {
       console.log('AuthContext: Fetching user data from /api/auth/me');
+      setLoading(true);
+      
       // Fetch the current user data with credentials included
       const response = await fetch('/api/auth/me', {
         credentials: 'include', // Include cookies in the request
+        // Add cache busting to prevent browser caching
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
       });
       
       console.log('AuthContext: /api/auth/me response status:', response.status);
@@ -59,8 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Auth check error:', error);
       setUser(null);
       return null;
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
   // Check for authentication on page load
   useEffect(() => {
@@ -73,7 +83,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     checkAuth();
-  }, []);
+  }, [fetchUserData]);
+
+  // Re-fetch user data at intervals to keep it fresh
+  useEffect(() => {
+    // Only set up polling if the user is authenticated
+    if (!user) return;
+    
+    // Refresh user data every 5 minutes to keep it fresh
+    const interval = setInterval(() => {
+      console.log('Refreshing user data in background');
+      fetchUserData();
+    }, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, [user, fetchUserData]);
 
   const login = (userData: User) => {
     console.log('AuthContext: Login with user data:', userData);
@@ -83,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       console.log('AuthContext: Logging out');
+      setLoading(true);
       const response = await fetch('/api/auth/logout', {
         method: 'POST',
         headers: {
@@ -103,6 +128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Logout error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 

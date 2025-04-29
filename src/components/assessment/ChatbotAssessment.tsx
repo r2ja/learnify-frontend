@@ -41,23 +41,26 @@ export function ChatbotAssessment() {
   // Reset state when user changes or logs out
   useEffect(() => {
     // If not authenticated or user changes, reset state
-    if (!isAuthenticated) {
-      console.log('User not authenticated, resetting assessment state');
+    if (!isAuthenticated || !user) {
+      console.log('User not authenticated or missing, resetting assessment state');
       resetAllState();
       prevUserIdRef.current = undefined;
       return;
     }
     
     // User changed detection
-    const userId = user?.id;
+    const userId = user.id;
     const userChanged = userId !== prevUserIdRef.current;
     
     if (userId && userChanged) {
       console.log('User changed, resetting assessment state for new user:', userId);
       resetAllState();
       prevUserIdRef.current = userId;
+      
+      // Trigger profile check when user changes
+      checkExistingProfile(userId);
     }
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user]);
 
   // Reset all component state
   const resetAllState = () => {
@@ -72,66 +75,77 @@ export function ChatbotAssessment() {
     setCheckingProfile(true);
   };
 
+  // Separate checkExistingProfile function for reusability
+  const checkExistingProfile = async (userId: string) => {
+    if (!userId || userId.trim() === '') {
+      console.error('User ID is empty or invalid');
+      setCheckingProfile(false);
+      return;
+    }
+
+    try {
+      setCheckingProfile(true);
+      console.log('Checking for existing learning profile for user:', userId);
+      
+      const response = await fetch(`/api/users/${userId}/learning-profile`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch profile: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Learning profile API response:', data);
+      
+      // The profile data is in the 'profile' property
+      const profile = data.profile;
+      
+      // Check if profile exists and has learning style data
+      if (profile && 
+          profile.processingStyle && 
+          profile.perceptionStyle && 
+          profile.inputStyle && 
+          profile.understandingStyle) {
+        
+        console.log('Existing profile found with styles:', profile);
+        
+        // Format the learning style information
+        const styleInfo: LearningStyleInfo = {
+          processingStyle: profile.processingStyle,
+          perceptionStyle: profile.perceptionStyle,
+          inputStyle: profile.inputStyle,
+          understandingStyle: profile.understandingStyle
+        };
+        
+        setHasExistingProfile(true);
+        setLearningStyle(styleInfo);
+      } else {
+        console.log('No complete learning profile found');
+        setHasExistingProfile(false);
+        setLearningStyle(null);
+      }
+    } catch (error) {
+      console.error('Error checking learning profile:', error);
+      setHasExistingProfile(false);
+      setLearningStyle(null);
+    } finally {
+      setCheckingProfile(false);
+    }
+  };
+
   // Check if user already has a learning profile
   useEffect(() => {
-    const checkExistingProfile = async () => {
+    const initializeProfile = async () => {
+      // Only proceed if we have both authentication and user data
       if (!isAuthenticated || !user?.id) {
         setCheckingProfile(false);
         return;
       }
 
-      try {
-        setCheckingProfile(true);
-        console.log('Checking for existing learning profile for user:', user.id);
-        const response = await fetch(`/api/users/${user.id}/learning-profile`);
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch profile: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log('Learning profile API response:', data);
-        
-        // The profile data is in the 'profile' property
-        const profile = data.profile;
-        
-        // Check if profile exists and has learning style data
-        if (profile && 
-            profile.processingStyle && 
-            profile.perceptionStyle && 
-            profile.inputStyle && 
-            profile.understandingStyle) {
-          
-          console.log('Existing profile found with styles:', profile);
-          setHasExistingProfile(true);
-          
-          // Format the learning style information
-          const styleInfo: LearningStyleInfo = {
-            processingStyle: profile.processingStyle,
-            perceptionStyle: profile.perceptionStyle,
-            inputStyle: profile.inputStyle,
-            understandingStyle: profile.understandingStyle
-          };
-          
-          setLearningStyle(styleInfo);
-        } else {
-          console.log('No complete learning profile found');
-          setHasExistingProfile(false);
-        }
-      } catch (error) {
-        console.error('Error checking learning profile:', error);
-        setHasExistingProfile(false);
-      } finally {
-        setCheckingProfile(false);
-      }
+      await checkExistingProfile(user.id.toString());
     };
 
-    if (isAuthenticated && user?.id) {
-      checkExistingProfile();
-    } else {
-      setCheckingProfile(false);
-    }
-  }, [isAuthenticated, user?.id]);
+    initializeProfile();
+  }, [isAuthenticated, user]);
 
   // Start the conversation when the user explicitly chooses to start the assessment
   const startConversation = async () => {
@@ -171,11 +185,6 @@ export function ChatbotAssessment() {
 
   const handleSend = async (e: FormEvent) => {
     e.preventDefault();
-
-    if (!isAuthenticated || !user?.id) {
-      router.push('/auth/login');
-      return;
-    }
 
     if (input.trim().length < 5) {
       setError('Please provide a more detailed response (at least 5 characters).');
@@ -304,11 +313,14 @@ This information will help us personalize your learning experience.`,
     setError(null);
   };
 
-  const handleStartTest = () => {
+  const handleStartTest = async () => {
     if (!isAuthenticated || !user?.id) {
       router.push('/auth/login');
       return;
     }
+
+    // Re-check profile before starting test
+    await checkExistingProfile(user.id.toString());
 
     if (!hasExistingProfile) {
       startConversation();
@@ -353,8 +365,8 @@ This information will help us personalize your learning experience.`,
     );
   }
 
-  // Render Learning Profile Results if test is complete or user has an existing profile
-  if ((testComplete || hasExistingProfile) && learningStyle) {
+  // Render Learning Profile Results if test is complete or user has an existing profile with valid learning style data
+  if ((testComplete || (hasExistingProfile && learningStyle)) && learningStyle) {
     return (
       <div className="w-full max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="p-8">

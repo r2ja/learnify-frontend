@@ -97,8 +97,22 @@ export default function LoginForm() {
         throw new Error(data.error || 'Login failed');
       }
 
-      // Navigate to the dashboard
-      router.push('/dashboard');
+      // After successful login, fetch the user data before redirecting
+      const userResponse = await fetch('/api/auth/me', {
+        credentials: 'include',
+      });
+      
+      if (!userResponse.ok) {
+        throw new Error('Failed to fetch user data after login');
+      }
+      
+      const userData = await userResponse.json();
+      
+      // Short delay to ensure data is processed 
+      setTimeout(() => {
+        // Navigate to the dashboard
+        router.push('/dashboard');
+      }, 100);
     } catch (err) {
       console.error('Login error:', err);
       setError(err instanceof Error ? err.message : 'Invalid email or password. Please try again.');
