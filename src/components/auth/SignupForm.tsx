@@ -41,27 +41,43 @@ export default function SignupForm() {
     if (!formData.name.trim()) {
       errors.name = 'Full name is required';
       isValid = false;
+    } else if (formData.name.trim().length < 2) {
+      errors.name = 'Name must be at least 2 characters';
+      isValid = false;
     }
 
-    // Email validation
+    // Email validation - more robust regex that handles common email format issues
     if (!formData.email) {
       errors.email = 'Email is required';
       isValid = false;
     } else {
-      // RFC 5322 compliant email regex
-      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+      // Enhanced email regex that checks for valid format with proper domain
+      // This regex ensures:
+      // - Local part contains valid characters
+      // - @ symbol is present
+      // - Domain has at least one dot
+      // - Domain parts contain valid characters
+      // - Top-level domain is at least 2 characters
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      
       if (!emailRegex.test(formData.email)) {
-        errors.email = 'Please enter a valid email address';
+        errors.email = 'Please enter a valid email address (e.g., name@example.com)';
         isValid = false;
       }
     }
 
-    // Password validation
+    // Password validation with additional strength requirements
     if (!formData.password) {
       errors.password = 'Password is required';
       isValid = false;
     } else if (formData.password.length < 8) {
       errors.password = 'Password must be at least 8 characters';
+      isValid = false;
+    } else if (!/\d/.test(formData.password)) {
+      errors.password = 'Password must contain at least one number';
+      isValid = false;
+    } else if (!/[a-zA-Z]/.test(formData.password)) {
+      errors.password = 'Password must contain at least one letter';
       isValid = false;
     }
 
@@ -118,6 +134,10 @@ export default function SignupForm() {
       }
 
       if (!response.ok) {
+        // Handle specific error cases
+        if (response.status === 409) {
+          throw new Error('An account with this email already exists. Please use a different email or try logging in.');
+        }
         // Handle specific database connection errors
         if (data.error && data.error.includes('database')) {
           throw new Error('Database connection failed. Please try again in a few moments or contact support if this persists.');
@@ -125,8 +145,35 @@ export default function SignupForm() {
         throw new Error(data.error || 'Registration failed');
       }
       
-      // Navigate to the assessment page after signup
-      router.push('/assessment');
+      // After successful signup, fetch the user data before redirecting
+      try {
+        const userResponse = await fetch('/api/auth/me', {
+          credentials: 'include',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
+        
+        if (!userResponse.ok) {
+          console.warn('Could not fetch user data after signup, but signup was successful');
+        } else {
+          // Successfully got user data
+          const userData = await userResponse.json();
+          console.log('User data fetched after signup:', userData);
+        }
+      } catch (fetchError) {
+        // Log the error but don't block the redirect
+        console.error('Error fetching user data after signup:', fetchError);
+      }
+
+      // Short delay to ensure data is processed before redirecting
+      setTimeout(() => {
+        // Navigate to the assessment page after signup with a query parameter
+        // to indicate this is a new user coming from signup
+        router.push('/assessment?fromSignup=true');
+      }, 100);
     } catch (err) {
       console.error('Signup error:', err);
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');

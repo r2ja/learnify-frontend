@@ -141,6 +141,16 @@ export function ChatbotAssessment() {
         return;
       }
 
+      // For users coming directly from signup, immediately show the start assessment screen
+      const isFromSignup = new URLSearchParams(window.location.search).get('fromSignup') === 'true';
+      if (isFromSignup) {
+        console.log('User coming from signup, showing start assessment screen');
+        setCheckingProfile(false);
+        setHasExistingProfile(false);
+        setLearningStyle(null);
+        return;
+      }
+
       await checkExistingProfile(user.id.toString());
     };
 
@@ -258,25 +268,51 @@ This information will help us personalize your learning experience.`,
         // Save the learning profile to the database only if the test is completely finished
         if (user?.id) {
           try {
-            const saveResponse = await fetch(`/api/users/${user.id}/learning-profile`, {
-              method: 'PUT',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                ...learningStyles,
-                assessmentDate: new Date(),
-              }),
-            });
+            console.log('Saving learning profile with data:', JSON.stringify(learningStyles));
             
-            if (!saveResponse.ok) {
-              throw new Error('Failed to save learning profile');
+            // Try saving up to 3 times with increasing delay
+            let saveSuccess = false;
+            let attempts = 0;
+            const maxAttempts = 3;
+            
+            while (!saveSuccess && attempts < maxAttempts) {
+              attempts++;
+              try {
+                const saveResponse = await fetch(`/api/users/${user.id}/learning-profile`, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    ...learningStyles,
+                    assessmentDate: new Date(),
+                  }),
+                });
+                
+                if (!saveResponse.ok) {
+                  const errorData = await saveResponse.json();
+                  console.error('Error response from API:', errorData);
+                  throw new Error(errorData.error || errorData.details || 'Failed to save learning profile');
+                }
+                
+                saveSuccess = true;
+                showToast('success', 'Learning profile saved successfully!');
+              } catch (saveError) {
+                console.error(`Attempt ${attempts} failed:`, saveError);
+                
+                if (attempts >= maxAttempts) {
+                  throw saveError;
+                }
+                
+                // Wait before retrying (exponential backoff)
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+              }
             }
-            
-            showToast('success', 'Learning profile saved successfully!');
           } catch (error) {
             console.error('Error saving learning profile:', error);
-            showToast('error', 'Failed to save learning profile.');
+            showToast('error', 'Failed to save learning profile. Your results are displayed but not saved.');
+            // Still set hasExistingProfile to true so user can see results
+            setHasExistingProfile(true);
           }
         }
       }

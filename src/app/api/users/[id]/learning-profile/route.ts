@@ -135,12 +135,12 @@ export async function GET(request: Request, { params }: RouteParams) {
       language: user.language || 'english',
       courseName,
       chapterName,
-      profile: learningProfile || {
-        processingStyle: 'Active',
-        perceptionStyle: 'Intuitive',
-        inputStyle: 'Visual',
-        understandingStyle: 'Sequential'
-      }
+      profile: learningProfile ? {
+        processingStyle: learningProfile.processingStyle,
+        perceptionStyle: learningProfile.perceptionStyle,
+        inputStyle: learningProfile.inputStyle,
+        understandingStyle: learningProfile.understandingStyle
+      } : null
     };
 
     // If a learning profile exists, include its ID in the response
@@ -282,8 +282,6 @@ export async function PUT(request: Request, { params }: RouteParams) {
           userId,
           ...profileData,
           assessmentDate: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date(),
         },
       });
     }
