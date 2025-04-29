@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -19,7 +19,7 @@ interface LearningStyleInfo {
 
 export function ChatbotAssessment() {
   const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshUserData } = useAuth();
   const { showToast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [responses, setResponses] = useState<string[]>([]); // Only validated responses
@@ -31,12 +31,47 @@ export function ChatbotAssessment() {
   const [hasExistingProfile, setHasExistingProfile] = useState(false);
   const [assessmentStarted, setAssessmentStarted] = useState(false);
   const [checkingProfile, setCheckingProfile] = useState(true);
+  const [urlUserId, setUrlUserId] = useState<string | null>(null);
+  const [authRetryCount, setAuthRetryCount] = useState(0);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
   // Track previous user to detect changes
   const prevUserIdRef = useRef<string | undefined>(undefined);
+  
+  // Check for userId parameter in URL (from dashboard notification or signup)
+  useEffect(() => {
+    // Extract URL parameters
+    const queryParams = new URLSearchParams(window.location.search);
+    const userIdParam = queryParams.get('userId');
+    const fromSignup = queryParams.get('fromSignup') === 'true';
+    
+    if (userIdParam) {
+      console.log('Detected userId in URL:', userIdParam);
+      setUrlUserId(userIdParam);
+    }
+    
+    // If we're coming from signup but not authenticated yet, try to refresh user data
+    if ((fromSignup || userIdParam) && !isAuthenticated && authRetryCount < 5) {
+      console.log(`Auth not ready yet. Retry attempt: ${authRetryCount + 1}`);
+      
+      // Set a delay that increases with each retry
+      const retryDelay = 1000 * (authRetryCount + 1);
+      
+      const retryTimer = setTimeout(async () => {
+        console.log(`Retry ${authRetryCount + 1}: Refreshing user data...`);
+        try {
+          await refreshUserData();
+        } catch (error) {
+          console.error('Error refreshing user data:', error);
+        }
+        setAuthRetryCount(prev => prev + 1);
+      }, retryDelay);
+      
+      return () => clearTimeout(retryTimer);
+    }
+  }, [isAuthenticated, authRetryCount, refreshUserData]);
 
   // Reset state when user changes or logs out
   useEffect(() => {
@@ -135,6 +170,15 @@ export function ChatbotAssessment() {
   // Check if user already has a learning profile
   useEffect(() => {
     const initializeProfile = async () => {
+      // Handle the case where we have a URL userId but no authenticated user yet
+      const isFromSignup = new URLSearchParams(window.location.search).get('fromSignup') === 'true';
+      
+      if ((!isAuthenticated || !user) && (urlUserId || isFromSignup) && authRetryCount < 5) {
+        console.log(`Waiting for authentication to complete...`);
+        setCheckingProfile(true);
+        return; // Will be retried by the auth retry mechanism
+      }
+      
       // Only proceed if we have both authentication and user data
       if (!isAuthenticated || !user?.id) {
         setCheckingProfile(false);
@@ -142,7 +186,6 @@ export function ChatbotAssessment() {
       }
 
       // For users coming directly from signup, immediately show the start assessment screen
-      const isFromSignup = new URLSearchParams(window.location.search).get('fromSignup') === 'true';
       if (isFromSignup) {
         console.log('User coming from signup, showing start assessment screen');
         setCheckingProfile(false);
@@ -155,7 +198,7 @@ export function ChatbotAssessment() {
     };
 
     initializeProfile();
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, urlUserId, authRetryCount]);
 
   // Start the conversation when the user explicitly chooses to start the assessment
   const startConversation = async () => {
@@ -195,6 +238,11 @@ export function ChatbotAssessment() {
 
   const handleSend = async (e: FormEvent) => {
     e.preventDefault();
+
+    if (!isAuthenticated || !user?.id) {
+      router.push('/auth/login');
+      return;
+    }
 
     if (input.trim().length < 5) {
       setError('Please provide a more detailed response (at least 5 characters).');
@@ -381,8 +429,23 @@ This information will help us personalize your learning experience.`,
     );
   }
 
-  // If not authenticated, show login prompt
+  // If not authenticated, show login prompt with better handling for users coming from signup
   if (!isAuthenticated) {
+    // If we're still in retry mode and came from signup, show a better loading state
+    if (authRetryCount < 5 && new URLSearchParams(window.location.search).get('fromSignup') === 'true') {
+      return (
+        <div className="w-full max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+          <div className="p-8 text-center">
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[var(--primary)]"></div>
+              <p className="mt-4 text-gray-500">Setting up your account...</p>
+              <p className="mt-2 text-sm text-gray-400">Please wait while we prepare your assessment.</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
     return (
       <div className="w-full max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="p-8 text-center">

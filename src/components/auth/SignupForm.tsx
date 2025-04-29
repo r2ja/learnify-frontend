@@ -158,22 +158,36 @@ export default function SignupForm() {
         
         if (!userResponse.ok) {
           console.warn('Could not fetch user data after signup, but signup was successful');
+          // Still redirect to assessment after a delay
+          setTimeout(() => {
+            router.push('/assessment?fromSignup=true');
+          }, 500); // Longer delay to allow for auth setup
         } else {
           // Successfully got user data
           const userData = await userResponse.json();
           console.log('User data fetched after signup:', userData);
+          
+          // Ensure we have the user ID before redirecting
+          if (userData && userData.id) {
+            // Short delay to ensure data is processed before redirecting
+            setTimeout(() => {
+              // Navigate to the assessment page with both user ID and fromSignup params
+              router.push(`/assessment?fromSignup=true&userId=${userData.id}`);
+            }, 500); // Longer delay to ensure auth state is fully established
+          } else {
+            // Fallback if user ID is somehow missing
+            setTimeout(() => {
+              router.push('/assessment?fromSignup=true');
+            }, 500);
+          }
         }
       } catch (fetchError) {
         // Log the error but don't block the redirect
         console.error('Error fetching user data after signup:', fetchError);
+        setTimeout(() => {
+          router.push('/assessment?fromSignup=true');
+        }, 500);
       }
-
-      // Short delay to ensure data is processed before redirecting
-      setTimeout(() => {
-        // Navigate to the assessment page after signup with a query parameter
-        // to indicate this is a new user coming from signup
-        router.push('/assessment?fromSignup=true');
-      }, 100);
     } catch (err) {
       console.error('Signup error:', err);
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
