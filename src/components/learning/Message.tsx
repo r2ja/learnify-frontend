@@ -31,11 +31,47 @@ interface ModalState {
   language?: string;
 }
 
+// Cache for API connectivity test to prevent multiple calls
+let apiConnectivityCache: { isWorking: boolean; timestamp: number } | null = null;
+const API_CACHE_DURATION = 30000; // 30 seconds
+
+// Helper function to test API connectivity
+const testApiConnectivity = async (): Promise<boolean> => {
+  try {
+    // Check cache first
+    const now = Date.now();
+    if (apiConnectivityCache && (now - apiConnectivityCache.timestamp < API_CACHE_DURATION)) {
+      console.log('Using cached API connectivity result:', apiConnectivityCache.isWorking);
+      return apiConnectivityCache.isWorking;
+    }
+    
+    console.log('Testing API connectivity...');
+    const response = await fetch('/api/test');
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('API test successful:', data);
+      
+      // Cache the result
+      apiConnectivityCache = { isWorking: true, timestamp: now };
+      return true;
+    } else {
+      console.error('API test failed with status:', response.status);
+      apiConnectivityCache = { isWorking: false, timestamp: now };
+      return false;
+    }
+  } catch (error) {
+    console.error('API test failed with error:', error);
+    apiConnectivityCache = { isWorking: false, timestamp: Date.now() };
+    return false;
+  }
+};
+
 // Helper to extract img_gen tags (handles missing closing tag)
 const extractImgGenTags = (content: string): { prompt: string, index: number, raw: string }[] => {
   const tags: { prompt: string, index: number, raw: string }[] = [];
-  // Updated pattern to handle both <img_gen> and <img_gen:description> formats
-  const imgGenPattern = /<img_gen(?:\:description)?>([\s\S]*?)(?:<\/img_gen>|$)/g;
+  // Updated pattern to handle malformed closing tags and spaces in tags
+  const imgGenPattern = /<\s*img_gen(?:\:description)?\s*>([\s\S]*?)(?:<\s*\/\s*img_g[^>]*>|<\s*\/\s*img_gen\s*>|$)/g;
   let match;
   let idx = 0;
   while ((match = imgGenPattern.exec(content)) !== null) {
@@ -43,6 +79,56 @@ const extractImgGenTags = (content: string): { prompt: string, index: number, ra
     if (prompt) tags.push({ prompt, index: idx++, raw: match[0] });
   }
   return tags;
+};
+
+// Helper to process img_gen tags and replace with placeholders
+const processImgGenTags = (content: string): { processedContent: string, imgGenTags: { prompt: string, index: number, raw: string }[] } => {
+  // For streaming content, don't process partial tags - check for both with and without spaces
+  if (content.length < 100 && 
+      (content.includes('<img_gen') || content.includes('< img_gen')) && 
+      !content.includes('</img_gen') && !content.includes('< /img_gen')) {
+    console.log('Detected partial img_gen tag in streaming response, not processing');
+    return { processedContent: content, imgGenTags: [] };
+  }
+
+  // Skip processing if content has already been processed (contains placeholder markers)
+  if (content.includes('__IMAGE_')) {
+    console.log('Content already contains image placeholders, skipping processing');
+    
+    // Extract the already processed tags for reference
+    const existingTags: { prompt: string, index: number, raw: string }[] = [];
+    const tagMatches = content.match(/__IMAGE_(\d+)__/g);
+    
+    if (tagMatches) {
+      console.log(`Found ${tagMatches.length} existing image placeholders`);
+    }
+    
+    return { processedContent: content, imgGenTags: existingTags };
+  }
+
+  const tags: { prompt: string, index: number, raw: string }[] = [];
+  // Updated pattern to handle malformed closing tags and spaces in tags
+  const imgGenPattern = /<\s*img_gen(?:\:description)?\s*>([\s\S]*?)(?:<\s*\/\s*img_g[^>]*>|<\s*\/\s*img_gen\s*>|$)/g;
+  let matchCount = 0;
+  
+  // Replace img_gen tags with placeholders
+  const processedContent = content.replace(imgGenPattern, (match, prompt) => {
+    const trimmedPrompt = prompt.trim();
+    if (trimmedPrompt) {
+      tags.push({ prompt: trimmedPrompt, index: matchCount, raw: match });
+      return `__IMAGE_${matchCount++}__`;
+    }
+    return '';
+  });
+  
+  return { processedContent, imgGenTags: tags };
+};
+
+// Helper to remove img_gen tags from content
+const removeImgGenTags = (content: string): string => {
+  // Remove img_gen tags with malformed closing tags, including versions with spaces
+  return content.replace(/<\s*img_gen(?:\:description)?\s*>([\s\S]*?)(?:<\s*\/\s*img_g[^>]*>|<\s*\/\s*img_gen\s*>|$)/g, '')
+    .replace(/__IMAGE_\d+__/g, '');
 };
 
 // Helper to remove mermaid code blocks from markdown content but keep their positions for rendering
@@ -74,102 +160,6 @@ const extractAndRemoveMermaidBlocks = (content: string): {
   return { cleanContent, mermaidDiagrams: mermaidBlocks };
 };
 
-// Helper function to replace img_gen tags with identifiable placeholders
-function replaceImgGenTagsWithPlaceholders(content: string): { newContent: string, placeholders: {id: string, prompt: string, raw: string}[] } {
-  const placeholders: {id: string, prompt: string, raw: string}[] = [];
-  const imgGenPattern = /<img_gen(?:\:description)?>([\s\S]*?)(?:<\/img_gen>|$)/g;
-  
-  // Replace each img_gen tag with a placeholder like [IMAGE:123]
-  let newContent = content;
-  let match;
-  
-  while ((match = imgGenPattern.exec(content)) !== null) {
-    const raw = match[0];
-    const prompt = match[1].trim();
-    if (prompt) {
-      // Create unique ID for this placeholder
-      const id = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const placeholder = `[IMAGE:${id}]`;
-      
-      // Store placeholder info
-      placeholders.push({ id, prompt, raw });
-      
-      // Replace the tag with the placeholder
-      newContent = newContent.replace(raw, placeholder);
-    }
-  }
-  
-  return { newContent, placeholders };
-}
-
-// Monkey patch the fetch API to handle img_gen tags and save generated images
-const originalFetch = window.fetch;
-window.fetch = function(input: RequestInfo | URL, init?: RequestInit) {
-  // Check if this is a POST request to the conversations API
-  if (
-    (typeof input === 'string' && input.includes('/api/conversations')) || 
-    (input instanceof Request && input.url.includes('/api/conversations'))
-  ) {
-    if (init?.method === 'POST' && init?.body) {
-      try {
-        // Parse the request body
-        const body = JSON.parse(init.body.toString());
-        
-        // If this contains messages, process img_gen tags in each message
-        if (body.messages && Array.isArray(body.messages)) {
-          // Track if we made any changes to messages
-          let messagesChanged = false;
-          
-          // Process each message
-          body.messages = body.messages.map((msg: any) => {
-            if (msg.content && typeof msg.content === 'string') {
-              // Skip if this message already has an images property (already processed)
-              if (msg.images) {
-                return msg;
-              }
-              
-              // Replace img_gen tags with identifiable placeholders
-              const { newContent, placeholders } = replaceImgGenTagsWithPlaceholders(msg.content);
-              
-              // If no replacements were made, return the original message
-              if (placeholders.length === 0) {
-                return msg;
-              }
-              
-              // Mark that we made changes
-              messagesChanged = true;
-              
-              // Set up the images property if needed
-              if (!msg.images) {
-                msg.images = {};
-              }
-              
-              // Return the updated message with placeholders
-              return {
-                ...msg,
-                content: newContent,
-                pendingImagePlaceholders: placeholders.map(p => ({ id: p.id, prompt: p.prompt }))
-              };
-            }
-            return msg;
-          });
-          
-          // Update the request with the modified messages
-          if (messagesChanged) {
-            init.body = JSON.stringify(body);
-            console.log('Modified messages for API call, replaced img_gen tags with placeholders');
-          }
-        }
-      } catch (e) {
-        console.error('Error processing img_gen tags in request:', e);
-      }
-    }
-  }
-  
-  // Call the original fetch function with the potentially modified input and init
-  return originalFetch.call(window, input, init);
-} as typeof window.fetch;
-
 // Custom hook to manage image generation
 function useImageGen(
   content: string, 
@@ -181,146 +171,269 @@ function useImageGen(
     title?: string;
   }
 ) {
-  // Extract img_gen tags from content
-  const imgGenTags = useMemo(() => 
-    extractImgGenTags(content)
-  , [content]);
-  
-  // Extract image placeholders ([IMAGE:id]) from content
-  const imagePlaceholders = useMemo(() => {
-    const placeholders: { id: string, index: number, placeholder: string }[] = [];
-    const placeholderPattern = /\[IMAGE:([^\]]+)\]/g;
-    let match;
-    let idx = 0;
-    
-    while ((match = placeholderPattern.exec(content)) !== null) {
-      const id = match[1];
-      placeholders.push({ id, index: idx++, placeholder: match[0] });
+  // First process img_gen tags, replacing with placeholders
+  const { processedContent: initialProcessedContent, imgGenTags } = useMemo(() => {
+    // Important: For streaming responses, we need to be careful about modifying content
+    // Check if this appears to be a stream chunk (usually much shorter and may be incomplete)
+    if (content.length < 100 && !content.includes('<img_gen') && !content.includes('< img_gen')) {
+      // For small chunks without img_gen tags, don't process
+      return { processedContent: content, imgGenTags: [] };
     }
     
-    return placeholders;
+    // Log for debugging img_gen tag detection
+    if (content.includes('<img_gen') || content.includes('< img_gen')) {
+      console.log('Detected img_gen tag in content:', content.substring(0, 100) + '...');
+    }
+    
+    return processImgGenTags(content);
   }, [content]);
-  
-  const [images, setImages] = useState<{ [key: string]: string | 'loading' | 'error' }>({});
-  const [processedContent, setProcessedContent] = useState(content);
-  
-  // Always update processedContent when content changes
+
+  // Log found img_gen tags
   useEffect(() => {
-    setProcessedContent(content);
-  }, [content]);
+    if (imgGenTags.length > 0) {
+      console.log(`Found ${imgGenTags.length} img_gen tags to process with prompts:`, 
+        imgGenTags.map(tag => tag.prompt.substring(0, 30) + '...'));
+    }
+  }, [imgGenTags]);
   
-  // Reference to track if images were stored in the database
-  const storedImages = useRef<Set<string>>(new Set());
+  const [images, setImages] = useState<{ [key: number]: string | 'loading' | 'error' }>({});
+  // Use the processed content directly instead of storing it in state
+  // This ensures it updates properly with each render as content changes
+  const processedContent = initialProcessedContent;
+  
+  // Reference to track if images were stored
+  const storedImages = useRef<Set<number>>(new Set());
+
+  // Use a ref to track which image tags we've started processing
+  // This is crucial to prevent multiple API calls during streaming
+  const processingImages = useRef<Set<string>>(new Set());
 
   // Process image gen tags
   useEffect(() => {
     if (imgGenTags.length === 0) return;
     
-    imgGenTags.forEach(({ prompt, index, raw }) => {
-      const imageId = `imggen-${index}-${Date.now()}`;
-      if (!images[imageId]) {
+    console.log(`Found ${imgGenTags.length} image generation tags`);
+    
+    // Create a cleanup function array
+    const cleanupFunctions: Array<() => void> = [];
+    
+    // Use a ref to track if this effect has run for these specific tags
+    const effectKey = JSON.stringify(imgGenTags.map(tag => tag.prompt + '-' + tag.index));
+    console.log(`Running image generation effect with key: ${effectKey.substring(0, 40)}...`);
+    
+    // First test API connectivity
+    testApiConnectivity().then(isApiWorking => {
+      // Skip if component has been unmounted
+      // if (cleanupFunctions.length === 0) return;
+      
+      if (!isApiWorking) {
+        console.error('API connectivity test failed, will not attempt to save images');
+        // Still generate images but don't try to save them
+        imgGenTags.forEach(({ prompt, index }) => {
+          // Create a unique key for this prompt+index combination
+          const imageKey = `${prompt.substring(0, 50)}-${index}`;
+          
+          // Skip if we've already started processing this image
+          if (processingImages.current.has(imageKey)) {
+            console.log(`Skipping duplicate image generation for ${imageKey} - already being processed`);
+            return;
+          }
+          
+          // Mark this image as being processed
+          processingImages.current.add(imageKey);
+          
+          const cleanup = processImageGeneration(prompt, index, false);
+          if (cleanup) cleanupFunctions.push(cleanup);
+        });
+      } else {
+        // API is working, proceed with normal operation
+    imgGenTags.forEach(({ prompt, index }) => {
+          // Create a unique key for this prompt+index combination
+          const imageKey = `${prompt.substring(0, 50)}-${index}`;
+          
+          // Skip if we've already started processing this image
+          if (processingImages.current.has(imageKey)) {
+            console.log(`Skipping duplicate image generation for ${imageKey} - already being processed`);
+            return;
+          }
+          
+          // Mark this image as being processed
+          processingImages.current.add(imageKey);
+          
+          const cleanup = processImageGeneration(prompt, index, true);
+          if (cleanup) cleanupFunctions.push(cleanup);
+        });
+      }
+    });
+    
+    // Cleanup function to cancel any pending image generation requests
+    return () => {
+      console.log(`Cleaning up image generation effect`);
+      cleanupFunctions.forEach(cleanup => cleanup());
+      cleanupFunctions.length = 0; // Clear the array
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    // Only run this effect when the unique string representation of the tags changes
+    JSON.stringify(imgGenTags.map(tag => tag.prompt + '-' + tag.index)),
+    // Don't include conversationContext as it may change too frequently
+    conversationContext?.conversationId
+  ]);
+
+  // Move the image generation logic to a separate function for cleaner code
+  const processImageGeneration = (prompt: string, index: number, shouldSave: boolean) => {
+    // console.log(`Processing image generation tag ${index}: ${prompt.substring(0, 30)}...`);
+    
+    // Check if we're already loading this image or have it
+    // if (images[index] === 'loading' || (images[index] && images[index] !== 'error')) {
+      // console.log(`Skipping duplicate image generation for tag ${index} - already in progress or completed`);
+      // return null; // Return null to indicate no cleanup needed
+    // }
+    
         // Set loading state immediately
-        setImages(prev => ({ ...prev, [imageId]: 'loading' }));
+    setImages(prev => {
+      // Additional check to prevent race conditions
+      if (prev[index] === 'loading' || (prev[index] && prev[index] !== 'error')) {
+        console.log(`Prevented duplicate image generation for tag ${index} due to race condition`);
+        return prev;
+      }
+      return { ...prev, [index]: 'loading' };
+    });
+    
+    // Use a local variable to track if this request has been handled
+    let isHandled = false;
+    
+    // Add a debounce by setting a timeout
+    const requestTimeout = setTimeout(() => {
+      if (isHandled) return;
+      
+      console.log(`🔄 SENDING OpenAI image generation request for tag ${index}:
+      Prompt: "${prompt.substring(0, 50)}..."
+      Time: ${new Date().toISOString()}`);
         
         // Use OpenAI SDK in browser
         const openai = new OpenAI({ apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY, dangerouslyAllowBrowser: true });
+      
         openai.images.generate({
           model: 'gpt-image-1',
           prompt,
           size: '1024x1024',
           quality: 'low',
         }).then((result: any) => {
+        if (isHandled) return;
+        isHandled = true;
+        
+        console.log(`✅ RECEIVED OpenAI image generation response for tag ${index}:
+        Time: ${new Date().toISOString()}
+        Status: Success`);
+        
           const imageBase64 = result.data[0].b64_json;
           const imageUrl = `data:image/png;base64,${imageBase64}`;
-          setImages(prev => ({ ...prev, [imageId]: imageUrl }));
+        console.log(`Image generation successful for tag ${index}`);
+        
+          setImages(prev => ({ ...prev, [index]: imageUrl }));
           
-          // Save the image to the database
-          if (!storedImages.current.has(imageId) && conversationContext?.conversationId) {
-            saveGeneratedImageToDatabase(imageUrl, prompt, raw, imageId);
-            storedImages.current.add(imageId);
+        // Save the image to the filesystem if we're supposed to
+        if (shouldSave && !storedImages.current.has(index) && conversationContext?.conversationId) {
+          console.log(`baka Saving image to filesystem for tag ${index}`);
+          saveImageToFilesystem(imageUrl, prompt, index);
+            storedImages.current.add(index);
           }
         }).catch((error) => {
-          console.error('Error generating image:', error);
-          setImages(prev => ({ ...prev, [imageId]: 'error' }));
+        if (isHandled) return;
+        isHandled = true;
+        
+        console.error(`❌ ERROR in OpenAI image generation for tag ${index}:
+        Time: ${new Date().toISOString()}
+        Error: ${error.message || error}`);
+        
+          setImages(prev => ({ ...prev, [index]: 'error' }));
         });
-      }
-    });
-  }, [imgGenTags, conversationContext?.conversationId]);
-  
-  // Process existing placeholders from server
-  useEffect(() => {
-    if (imagePlaceholders.length === 0 || !conversationContext) return;
+    }, 500); // Increase delay to 500ms to further reduce chance of duplicate calls
     
-    // Find the message in conversation context
-    const message = conversationContext.messages.find(msg => msg.content === content);
-    if (!message || !message.images) return;
-    
-    // Check each placeholder for an existing image
-    imagePlaceholders.forEach(({ id, placeholder }) => {
-      // If we already loaded this image, skip
-      if (images[id] && images[id] !== 'loading' && images[id] !== 'error') return;
-      
-      // Check if we have this image in the message's images property
-      const imageData = message.images[placeholder] || message.images[`[IMAGE:${id}]`];
-      if (imageData && imageData.base64) {
-        // We found an existing image for this placeholder
-        setImages(prev => ({ ...prev, [id]: imageData.base64 }));
-      }
-    });
-  }, [imagePlaceholders, conversationContext, content, images]);
+    // Clean up if component unmounts during the timeout
+    return () => {
+      clearTimeout(requestTimeout);
+      isHandled = true; // Mark as handled to prevent late responses
+    };
+  };
 
-  // Save image to conversation after generation
-  const saveGeneratedImageToDatabase = (imageUrl: string, prompt: string, tagRaw: string, imageId: string) => {
+  // Save image to filesystem instead of conversation
+  const saveImageToFilesystem = async (imageUrl: string, prompt: string, index: number) => {
     if (!conversationContext || !conversationContext.conversationId) {
       console.log('No conversation context available for saving image');
       return;
     }
 
     try {
-      console.log('Saving generated image to database...');
+      console.log(`Attempting to save image to filesystem for index ${index} with prompt: ${prompt.substring(0, 30)}...`);
       
-      // Create a deep copy of the messages to modify
-      const updatedMessages = JSON.parse(JSON.stringify(conversationContext.messages));
+      // Skip test API call since we've already tested connectivity
+      console.log('Making API call to /api/saveImage');
       
-      // Find the message containing the img_gen tag
-      const messageIndex = updatedMessages.findIndex((msg: any) => 
-        msg.content && msg.content.includes(tagRaw)
-      );
+      const saveResponse = await fetch('/api/saveImage', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          imageData: imageUrl,
+          prompt: prompt
+        })
+      });
       
-      if (messageIndex === -1) {
-        console.error('Could not find message containing image tag');
-        return;
+      console.log(`saveImage API response status: ${saveResponse.status}`);
+      
+      if (!saveResponse.ok) {
+        throw new Error(`Failed to save image: ${saveResponse.status}`);
       }
       
-      // Create a placeholder for this image
-      const imagePlaceholder = `[IMAGE:${imageId}]`;
-      
-      // Get the message to update
-      const message = updatedMessages[messageIndex];
-      
-      // Replace the img_gen tag with the placeholder
-      message.content = message.content.replace(tagRaw, imagePlaceholder);
-      
-      // Add or update the images property
-      if (!message.images) {
-        message.images = {};
+      let data;
+      try {
+        data = await saveResponse.json();
+        console.log(`✅ IMAGE SAVED SUCCESSFULLY:
+        File path: ${data.filePath}
+        Filename: ${data.filename}
+        Location: C:/Users/inaya/OneDrive/Desktop/FYP/images/${data.filename}
+        Time: ${new Date().toISOString()}`);
+      } catch (jsonError) {
+        console.error('Error parsing save response JSON:', jsonError);
+        throw new Error('Failed to parse save response');
       }
       
-      // Store the image data with the placeholder
-      message.images[imagePlaceholder] = {
-        base64: imageUrl,
-        prompt: prompt
+      // Add a new message with just the image reference
+      const newImageMessage = {
+        id: `img-${Date.now().toString()}`,
+        content: JSON.stringify({ 
+          filePath: data.filePath, 
+          filename: data.filename,
+          prompt: prompt,
+          originalPrompt: prompt
+        }),
+        isUser: false,
+        accentColor: 'var(--primary)',
+        isMarkdown: true,
+        timestamp: new Date().toISOString()
       };
       
-      // Remove any pendingImagePlaceholders property if it exists
-      if (message.pendingImagePlaceholders) {
-        delete message.pendingImagePlaceholders;
-      }
+      console.log('Creating new message with image reference:', newImageMessage.id);
       
-      console.log(`Saving message with image placeholder: ${imagePlaceholder}`);
+      // Save the current messages with processed content
+      const currentMessages = conversationContext.messages.map(msg => {
+        if (msg.content === content) {
+          return { ...msg, content: processedContent };
+        }
+        return msg;
+      });
       
-      // Save using the conversation endpoint
-      fetch('/api/conversations', {
+      // Add the new message with the image reference
+      const updatedMessages = [...currentMessages, newImageMessage];
+      
+      console.log(`Saving conversation with image reference. Total messages: ${updatedMessages.length}`);
+      
+      // Save using the existing conversation endpoint
+      const conversationResponse = await fetch('/api/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -330,25 +443,116 @@ function useImageGen(
           messages: updatedMessages,
           title: conversationContext.title || 'Chat'
         })
-      })
-      .then(response => {
-        if (!response.ok) throw new Error(`Failed to save image: ${response.status}`);
-        console.log(`Image saved successfully with placeholder ${imagePlaceholder}`);
-      })
-      .catch(error => console.error('Error saving image to database:', error));
+      });
+      
+      console.log(`Conversation API response status: ${conversationResponse.status}`);
+      
+      if (!conversationResponse.ok) {
+        throw new Error(`Failed to save image reference: ${conversationResponse.status}`);
+      }
+      
+      console.log(`Image reference saved successfully to conversation`);
       
     } catch (error) {
-      console.error('Error preparing image save:', error);
+      console.error('Error saving image or updating conversation:', error);
+      // Update the image state to error if we failed to save
+      setImages(prev => {
+        if (prev[index] !== 'error') {
+          return { ...prev, [index]: 'error' };
+        }
+        return prev;
+      });
     }
   };
+
+  // Extract mermaid diagrams if isMarkdown is true
+  const { cleanContent, mermaidDiagrams } = useMemo(() => {
+    if (!processedContent || processedContent.trim() === '') {
+      return { cleanContent: processedContent, mermaidDiagrams: [] };
+    }
+    return extractAndRemoveMermaidBlocks(processedContent);
+  }, [processedContent]);
 
   return { 
     imgGenTags, 
     images, 
     processedContent,
-    imagePlaceholders
+    cleanContent,
+    mermaidDiagrams
   };
 }
+
+// Add a component for image loading
+const ImageFromFile = ({ filePath, prompt }: { filePath: string, prompt?: string }) => {
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    if (!filePath) {
+      setError('No file path provided');
+      setIsLoading(false);
+      return;
+    }
+    
+    setIsLoading(true);
+    fetch(`/api/getImage?filePath=${encodeURIComponent(filePath)}`)
+      .then(response => {
+        if (!response.ok) throw new Error(`Failed to load image: ${response.status}`);
+        return response.blob();
+      })
+      .then(blob => {
+        const imageUrl = URL.createObjectURL(blob);
+        setImageSrc(imageUrl);
+        setIsLoading(false);
+      })
+      .catch(error => {
+        console.error('Error loading image:', error);
+        setError(error.message);
+        setIsLoading(false);
+      });
+      
+    // Cleanup function to revoke object URL when component unmounts
+    return () => {
+      if (imageSrc) URL.revokeObjectURL(imageSrc);
+    };
+  }, [filePath]);
+  
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 w-full bg-gray-100 rounded-lg p-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-3"></div>
+        <p className="text-sm text-gray-500">Loading image...</p>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-32 w-full bg-red-50 text-red-500 rounded-lg p-4">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <p className="text-sm">Failed to load image</p>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="flex flex-col items-center">
+      <img 
+        src={imageSrc || ''} 
+        alt="Generated image" 
+        className="rounded-lg max-w-full max-h-[500px] border shadow"
+      />
+      {prompt && (
+        <p className="text-xs text-gray-500 mt-2 italic">
+          Generated from: "{prompt.substring(0, 50)}{prompt.length > 50 ? '...' : ''}"
+        </p>
+      )}
+    </div>
+  );
+};
 
 // New function to add line breaks to long single lines in code blocks
 const addLineBreaksToLongLines = (code: string, maxLineLength: number = 80): string => {
@@ -384,65 +588,15 @@ const addLineBreaksToLongLines = (code: string, maxLineLength: number = 80): str
   return code;
 };
 
-// Custom hook to handle mermaid diagrams
-function useMermaidDiagrams(content: string, isMarkdown: boolean) {
-  return useMemo(() => {
-    if (!isMarkdown) return { charts: [] };
-    
-    // Extract mermaid diagrams from the content
-    const mermaidPattern = /```mermaid\n([\s\S]*?)```/g;
-    const charts: string[] = [];
-    let match;
-    
-    while ((match = mermaidPattern.exec(content)) !== null) {
-      charts.push(match[1].trim());
-    }
-    
-    return { charts };
-  }, [content, isMarkdown]);
-}
-
-// Helper function to check if a string is a JSON object with imageBase64
+// Helper function to check if a string is a JSON object with imageBase64 or filePath
 function isImageJSON(content: string): boolean {
   try {
     const parsed = JSON.parse(content);
-    return parsed && typeof parsed.imageBase64 === 'string';
+    return parsed && (typeof parsed.imageBase64 === 'string' || typeof parsed.filePath === 'string');
   } catch (e) {
     return false;
   }
 }
-
-// Helper function to filter out all img_gen tags from text content
-function filterImgGenTags(content: string): string {
-  // This regex matches both opening and closing img_gen tags with or without description
-  return content.replace(/<img_gen(?:\:description)?>([\s\S]*?)(?:<\/img_gen>|$)/g, '');
-}
-
-// Helper to check if content has an 'images' property with placeholders
-const hasImagePlaceholders = (content: string, images?: Record<string, any>): boolean => {
-  if (!images) return false;
-  
-  // Check if any image placeholder exists in the content
-  return Object.keys(images).some(placeholder => content.includes(placeholder));
-};
-
-// Helper to extract image placeholders from content
-const extractImagePlaceholders = (content: string, images?: Record<string, any>): {placeholder: string, imageData: any}[] => {
-  if (!images) return [];
-  
-  const placeholders: {placeholder: string, imageData: any}[] = [];
-  
-  Object.keys(images).forEach(placeholder => {
-    if (content.includes(placeholder)) {
-      placeholders.push({
-        placeholder,
-        imageData: images[placeholder]
-      });
-    }
-  });
-  
-  return placeholders;
-};
 
 // Simplified Message component
 export const Message: FC<MessageProps> = ({ 
@@ -477,56 +631,26 @@ export const Message: FC<MessageProps> = ({
   // Check if this message is just a stored image
   const isImageOnlyMessage = useMemo(() => isImageJSON(content), [content]);
   
-  // Parse content for stored images (JSON format with imageBase64)
-  const storedImage = useMemo(() => {
+  // Parse content for stored images (JSON format with imageBase64 or filePath)
+  const [storedImage, filePath, promptFromImage] = useMemo(() => {
     if (isImageOnlyMessage) {
-      try {
-        const parsed = JSON.parse(content);
-        return parsed.imageBase64;
-      } catch (e) {
-        return null;
+    try {
+      const parsed = JSON.parse(content);
+        if (parsed.imageBase64) {
+          return [parsed.imageBase64, null, parsed.originalPrompt || parsed.prompt || null];
+        }
+        if (parsed.filePath) {
+          return [null, parsed.filePath, parsed.originalPrompt || parsed.prompt || null];
+        }
+    } catch (e) {
+        return [null, null, null];
       }
     }
-    return null;
+    return [null, null, null];
   }, [content, isImageOnlyMessage]);
   
   // Use the image generation hook
-  const { imgGenTags, images, processedContent, imagePlaceholders } = useImageGen(content, conversationContext);
-
-  // Create a display version of content with img_gen tags hidden
-  const displayContent = useMemo(() => {
-    // Start with the processed content
-    let result = processedContent;
-    
-    // Hide img_gen tags
-    imgGenTags.forEach(tag => {
-      result = result.replace(tag.raw, '');
-    });
-    
-    return result;
-  }, [processedContent, imgGenTags]);
-
-  // Extract and remove mermaid diagrams from content
-  const { cleanContent, mermaidDiagrams } = useMemo(() => {
-    if (!isMarkdown) return { cleanContent: displayContent, mermaidDiagrams: [] };
-    return extractAndRemoveMermaidBlocks(displayContent);
-  }, [displayContent, isMarkdown]);
-
-  // Check for image placeholders in the message from the database
-  const [databaseImages, setDatabaseImages] = useState<{[key: string]: {base64: string, prompt: string}}>({});
-  
-  // Extract image placeholders from the message's images property
-  useEffect(() => {
-    if (conversationContext?.messages) {
-      // Find the current message in the context
-      const message = conversationContext.messages.find(msg => msg.content === content);
-      
-      if (message?.images) {
-        setDatabaseImages(message.images);
-        console.log(`Found ${Object.keys(message.images).length} image placeholders in message from database`);
-      }
-    }
-  }, [content, conversationContext?.messages]);
+  const { imgGenTags, images, processedContent, cleanContent, mermaidDiagrams } = useImageGen(content, conversationContext);
 
   // For debugging
   useEffect(() => {
@@ -534,30 +658,13 @@ export const Message: FC<MessageProps> = ({
     if (imgGenTags.length > 0) {
       console.log(`Found ${imgGenTags.length} img_gen tags to process`);
     }
-    if (imagePlaceholders.length > 0) {
-      console.log(`Found ${imagePlaceholders.length} image placeholders in content`);
-    }
     if (mermaidDiagrams.length > 0) {
       console.log(`Found ${mermaidDiagrams.length} mermaid diagrams to render`);
     }
-    if (Object.keys(databaseImages).length > 0) {
-      console.log(`Found ${Object.keys(databaseImages).length} image placeholders from database`);
-    }
-  }, [content, imgGenTags.length, mermaidDiagrams.length, isImageOnlyMessage, databaseImages, imagePlaceholders.length]);
+  }, [content, imgGenTags.length, mermaidDiagrams.length, isImageOnlyMessage]);
 
   // If this is just a stored image message, render only the image
-  if (isImageOnlyMessage && storedImage) {
-    // Extract original prompt from content if available
-    let originalPrompt = null;
-    try {
-      const parsed = JSON.parse(content);
-      if (parsed.originalPrompt) {
-        originalPrompt = parsed.originalPrompt;
-      }
-    } catch (e) {
-      // Ignore parsing errors
-    }
-
+  if (isImageOnlyMessage) {
     return (
       <div className={`flex ${isUser ? 'justify-end' : 'justify-center'} mb-4 px-4 sm:px-8 md:px-12 lg:px-20`}>
         {!isUser && (
@@ -573,16 +680,20 @@ export const Message: FC<MessageProps> = ({
           }`}
         >
           <div className="my-2 flex justify-center">
+            {storedImage ? (
             <img 
               src={storedImage} 
               alt="Generated visual" 
               className="rounded-lg max-w-full max-h-[500px] border shadow" 
             />
+            ) : filePath ? (
+              <ImageFromFile filePath={filePath} prompt={promptFromImage} />
+            ) : null}
           </div>
           {/* Show the original prompt if available */}
-          {originalPrompt && (
+          {promptFromImage && !filePath && (
             <div className="mt-2 text-xs text-gray-500 italic">
-              Generated from: "{originalPrompt.substring(0, 50)}{originalPrompt.length > 50 ? '...' : ''}"
+              Generated from: "{promptFromImage.substring(0, 50)}{promptFromImage.length > 50 ? '...' : ''}"
             </div>
           )}
         </div>
@@ -594,58 +705,6 @@ export const Message: FC<MessageProps> = ({
       </div>
     );
   }
-
-  // Process content to render image placeholders from database
-  const processContentWithDatabaseImages = (content: string): React.ReactNode[] => {
-    if (!databaseImages || Object.keys(databaseImages).length === 0) {
-      return [content];
-    }
-    
-    // Split the content by image placeholders
-    const result: React.ReactNode[] = [];
-    let remainingContent = content;
-    
-    Object.keys(databaseImages).forEach(placeholder => {
-      if (remainingContent.includes(placeholder)) {
-        const parts = remainingContent.split(placeholder);
-        if (parts.length === 2) {
-          // Add text before placeholder
-          if (parts[0]) {
-            result.push(parts[0]);
-          }
-          
-          // Add image component
-          const imageData = databaseImages[placeholder];
-          result.push(
-            <div key={placeholder} className="my-4 flex justify-center w-full">
-              <div className="flex flex-col items-center">
-                <img 
-                  src={imageData.base64} 
-                  alt="Generated image" 
-                  className="rounded-lg max-w-full max-h-[500px] border shadow"
-                />
-                {imageData.prompt && (
-                  <p className="text-xs text-gray-500 mt-2 italic">
-                    Generated from: "{imageData.prompt.substring(0, 50)}{imageData.prompt.length > 50 ? '...' : ''}"
-                  </p>
-                )}
-              </div>
-            </div>
-          );
-          
-          // Update remaining content
-          remainingContent = parts[1];
-        }
-      }
-    });
-    
-    // Add any remaining content
-    if (remainingContent) {
-      result.push(remainingContent);
-    }
-    
-    return result;
-  };
 
   // Custom component to render markdown with mermaid diagrams
   const CustomMarkdownWithDiagrams = () => {
@@ -674,11 +733,11 @@ export const Message: FC<MessageProps> = ({
               return (
                 <div key={`mermaid-diagram-${index}`} className="my-4 flex justify-center w-full">
                   <div 
-                    className="w-full max-w-full overflow-hidden border border-gray-200 rounded-lg bg-white shadow-md p-4 flex flex-col items-center justify-center max-h-[400px] cursor-pointer hover:bg-gray-50 transition-colors"
+                    className="w-full max-w-full overflow-hidden border border-gray-200 rounded-lg bg-white shadow-md p-4 flex flex-col items-center justify-center min-h-[350px] cursor-pointer hover:bg-gray-50 transition-colors"
                     onClick={() => openModal(diagram.code, 'mermaid')}
                   >
-                    <div className="max-w-full w-full flex-shrink-0 overflow-auto flex justify-center">
-                      <div className="transform scale-75 origin-center" style={{ maxWidth: '100%' }}>
+                    <div className="max-w-full w-full h-full flex-1 overflow-auto flex justify-center">
+                      <div className="transform scale-95 origin-center" style={{ maxWidth: '100%', minHeight: '300px' }}>
                         <React.Suspense fallback={
                           <div className="flex items-center space-x-2 w-full justify-center h-[300px]">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -698,98 +757,184 @@ export const Message: FC<MessageProps> = ({
             }
           }
           
-          // Otherwise render markdown for this segment with database images
-          const segmentParts = processContentWithDatabaseImages(segment);
-          
-          return segmentParts.map((part, partIndex) => {
-            if (typeof part === 'string') {
-              return (
-                <div key={`markdown-${index}-${partIndex}`} className="prose prose-base max-w-none prose-headings:font-bold prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-hr:my-4 prose-ul:pl-5 prose-ol:pl-5">
-                  <ReactMarkdown
-                    components={{
-                      code({ node, inline, className, children, ...props }) {
-                        const match = /language-(\w+)/.exec(className || '');
-                        const code = String(children).replace(/\n$/, '');
-                        
-                        if (!inline && match) {
-                          // Process long single-line code blocks
-                          const processedCode = addLineBreaksToLongLines(code, 80);
-                          
-                          return (
-                            <div className="relative">
-                              <SyntaxHighlighter
-                                {...props}
-                                style={vscDarkPlus}
-                                language={match[1]}
-                                PreTag="div"
-                                customStyle={{
-                                  borderRadius: '0.375rem',
-                                  fontSize: '0.875rem',
-                                  lineHeight: '1.25rem',
-                                  maxWidth: '100%',
-                                  overflowX: 'auto',
-                                }}
-                                wrapLines={true}
-                                wrapLongLines={true}
-                              >
-                                {processedCode}
-                              </SyntaxHighlighter>
-                              <button 
-                                onClick={() => openModal(code, 'code', match[1])}
-                                className="absolute top-2 right-2 text-xs px-2 py-1 bg-gray-700 text-white rounded opacity-70 hover:opacity-100 transition-opacity"
-                              >
-                                Expand
-                              </button>
-                            </div>
-                          );
-                        } else if (!inline) {
-                          // Handle code blocks without language specification
-                          const processedCode = addLineBreaksToLongLines(code, 80);
-                          return (
-                            <div className="relative">
-                              <SyntaxHighlighter
-                                {...props}
-                                style={vscDarkPlus}
-                                language="text"
-                                PreTag="div"
-                                customStyle={{
-                                  borderRadius: '0.375rem',
-                                  fontSize: '0.875rem',
-                                  lineHeight: '1.25rem',
-                                  maxWidth: '100%',
-                                  overflowX: 'auto',
-                                }}
-                                wrapLines={true}
-                                wrapLongLines={true}
-                              >
-                                {processedCode}
-                              </SyntaxHighlighter>
-                              <button 
-                                onClick={() => openModal(code, 'code')}
-                                className="absolute top-2 right-2 text-xs px-2 py-1 bg-gray-700 text-white rounded opacity-70 hover:opacity-100 transition-opacity"
-                              >
-                                Expand
-                              </button>
-                            </div>
-                          );
-                        }
-                        
-                        return <code {...props} className={className}>{children}</code>;
-                      }
-                    }}
-                  >
-                    {part}
-                  </ReactMarkdown>
-                </div>
-              );
-            } else {
-              return part; // This is an image component
-            }
-          });
+          // Otherwise render markdown for this segment
+          return (
+            <div key={`markdown-${index}`} className="prose prose-base max-w-none prose-headings:font-bold prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-hr:my-4 prose-ul:pl-5 prose-ol:pl-5">
+              <ReactMarkdown
+                components={{
+                  code({ node, inline, className, children, ...props }) {
+                    const match = /language-(\w+)/.exec(className || '');
+                    const code = String(children).replace(/\n$/, '');
+                    
+                    if (!inline && match) {
+                      // Process long single-line code blocks
+                      const processedCode = addLineBreaksToLongLines(code, 80);
+                      
+                      return (
+                        <div className="relative">
+                          <SyntaxHighlighter
+                            {...props}
+                            style={vscDarkPlus}
+                            language={match[1]}
+                            PreTag="div"
+                            customStyle={{
+                              borderRadius: '0.375rem',
+                              fontSize: '0.875rem',
+                              lineHeight: '1.25rem',
+                              maxWidth: '100%',
+                              overflowX: 'auto',
+                            }}
+                            wrapLines={true}
+                            wrapLongLines={true}
+                          >
+                            {processedCode}
+                          </SyntaxHighlighter>
+                          <button 
+                            onClick={() => openModal(code, 'code', match[1])}
+                            className="absolute top-2 right-2 text-xs px-2 py-1 bg-gray-700 text-white rounded opacity-70 hover:opacity-100 transition-opacity"
+                          >
+                            Expand
+                          </button>
+                        </div>
+                      );
+                    } else if (!inline) {
+                      // Handle code blocks without language specification
+                      const processedCode = addLineBreaksToLongLines(code, 80);
+                      return (
+                        <div className="relative">
+                          <SyntaxHighlighter
+                            {...props}
+                            style={vscDarkPlus}
+                            language="text"
+                            PreTag="div"
+                            customStyle={{
+                              borderRadius: '0.375rem',
+                              fontSize: '0.875rem',
+                              lineHeight: '1.25rem',
+                              maxWidth: '100%',
+                              overflowX: 'auto',
+                            }}
+                            wrapLines={true}
+                            wrapLongLines={true}
+                          >
+                            {processedCode}
+                          </SyntaxHighlighter>
+                          <button 
+                            onClick={() => openModal(code, 'code')}
+                            className="absolute top-2 right-2 text-xs px-2 py-1 bg-gray-700 text-white rounded opacity-70 hover:opacity-100 transition-opacity"
+                          >
+                            Expand
+                          </button>
+                        </div>
+                      );
+                    }
+                    
+                    return <code {...props} className={className}>{children}</code>;
+                  }
+                }}
+              >
+                {segment}
+              </ReactMarkdown>
+            </div>
+          );
         })}
       </>
     );
   };
+
+  // Function to render image placeholders
+  const renderImagePlaceholders = () => {
+    if (imgGenTags.length === 0) return null;
+    
+    return imgGenTags.map(({ prompt, index }) => {
+      const image = images[index];
+      return (
+        <div key={`img-gen-${index}`} className="my-4 flex justify-center w-full">
+          {(!image || image === 'loading') && (
+            <div className="flex flex-col items-center space-y-3 w-full justify-center min-h-[200px] p-4 border border-gray-200 rounded-lg bg-gray-50">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+              <span className="text-sm text-gray-500">Generating image...</span>
+              <span className="text-xs text-gray-400 max-w-md text-center">
+                Creating an image based on: "{prompt.substring(0, 50)}{prompt.length > 50 ? '...' : ''}"
+              </span>
+            </div>
+          )}
+          {image === 'error' && (
+            <div className="flex items-center justify-center w-full min-h-[200px] text-red-500 p-4 border border-red-200 rounded-lg bg-red-50">
+              <div className="text-center">
+                <p className="font-medium">Image generation failed</p>
+                <p className="text-sm mt-2">There was an error creating your image</p>
+                <p className="text-xs mt-1 text-gray-500">Prompt: "{prompt.substring(0, 50)}{prompt.length > 50 ? '...' : ''}"</p>
+              </div>
+            </div>
+          )}
+          {image && image !== 'loading' && image !== 'error' && (
+            <div className="flex flex-col items-center">
+              <img src={image} alt="Generated visual" className="rounded-lg max-w-full max-h-[500px] border shadow" />
+              <p className="text-xs text-gray-500 mt-2 italic">
+                Generated from: "{prompt.substring(0, 50)}{prompt.length > 50 ? '...' : ''}"
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
+
+  // Determine if this content is likely a stream chunk in progress
+  const isStreamingChunk = useMemo(() => {
+    // Check for hallmarks of a partial chunk during streaming:
+    // 1. Short content (but not too short)
+    // 2. No complete sentences (no periods followed by space or newline)
+    // 3. No markdown or img_gen tags
+    // 4. For very short content, it's almost always a stream chunk
+    if (content.length <= 2) return true;
+    
+    // For slightly longer content, use more heuristics
+    const isStream = content.length > 0 && 
+           content.length < 300 && 
+           (!content.match(/\.\s|\.\n/) || !content.includes(' ')) &&  // No sentences or no spaces
+           !content.includes('```') && 
+           !content.includes('<img_gen') &&
+           !content.includes('\n\n');  // Double line breaks usually indicate complete message
+    
+    // For debugging streaming issues
+    if (isStream) {
+      console.log(`Detected streaming chunk: "${content.substring(0, 20)}${content.length > 20 ? '...' : ''}" (${content.length} chars)`);
+    }
+    
+    return isStream;
+  }, [content]);
+
+  // For streaming chunks, keep rendering simple to avoid interfering with accumulation
+  if (isStreamingChunk) {
+    return (
+      <div className={`flex ${isUser ? 'justify-end' : 'justify-center'} mb-4 px-4 sm:px-8 md:px-12 lg:px-20`}>
+        {!isUser && (
+          <div className="flex-shrink-0 w-9 h-9 rounded-md bg-[var(--primary)] text-white flex items-center justify-center mr-3 mt-0.5">
+            <span className="text-base font-semibold">L</span>
+          </div>
+        )}
+        <div 
+          className={`relative max-w-[90%] sm:max-w-[80%] md:max-w-[70%] lg:max-w-[65%] py-4 px-5 rounded-lg ${
+            isUser 
+              ? 'bg-[var(--primary)] text-white' 
+              : 'bg-gray-100 text-gray-800'
+          }`}
+        >
+          {/* Keep this extremely simple for streaming chunks - no markdown or processing at all */}
+          <div className="whitespace-pre-wrap text-base">
+            {content}
+          </div>
+        </div>
+        {isUser && (
+          <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center ml-3 mt-0.5">
+            <span className="text-base font-semibold">U</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // Render message with content, images, and diagrams
   return (
@@ -806,75 +951,20 @@ export const Message: FC<MessageProps> = ({
             : 'bg-gray-100 text-gray-800'
         }`}
       >
-        {/* Hidden div containing the original content with tags - used for API calls */}
-        <div className="hidden">{processedContent}</div>
-        
-        {/* Markdown content with mermaid diagrams - using displayContent (tags hidden) */}
+        {/* Markdown content with mermaid diagrams */}
         {isMarkdown && processedContent && (
           <CustomMarkdownWithDiagrams />
         )}
         
-        {/* Plain text content - using displayContent (tags hidden) */}
+        {/* Plain text content */}
         {!isMarkdown && (
           <div className="whitespace-pre-wrap text-base">
-            {processContentWithDatabaseImages(displayContent).map((part, index) => 
-              typeof part === 'string' ? <span key={index}>{part}</span> : part
-            )}
+            {processedContent}
           </div>
         )}
         
-        {/* Image generation loading indicators and results */}
-        {imgGenTags.map(({ prompt, index }) => {
-          const imageId = `imggen-${index}-${Date.now()}`;
-          const image = images[imageId];
-          return (
-            <div key={`img-gen-${index}`} className="my-4 flex justify-center w-full">
-              {(!image || image === 'loading') && (
-                <div className="flex flex-col items-center space-y-3 w-full justify-center min-h-[200px] p-4 border border-gray-200 rounded-lg bg-gray-50">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                  <span className="text-sm text-gray-500">Generating image...</span>
-                  <span className="text-xs text-gray-400 max-w-md text-center">
-                    Creating an image based on: "{prompt.substring(0, 50)}{prompt.length > 50 ? '...' : ''}"
-                  </span>
-                </div>
-              )}
-              {image === 'error' && (
-                <div className="flex items-center justify-center w-full min-h-[200px] text-red-500 p-4 border border-red-200 rounded-lg bg-red-50">
-                  <div className="text-center">
-                    <p className="font-medium">Image generation failed</p>
-                    <p className="text-sm mt-2">There was an error creating your image</p>
-                    <p className="text-xs mt-1 text-gray-500">Prompt: "{prompt.substring(0, 50)}{prompt.length > 50 ? '...' : ''}"</p>
-                  </div>
-                </div>
-              )}
-              {image && image !== 'loading' && image !== 'error' && (
-                <div className="flex flex-col items-center">
-                  <img src={image} alt="Generated visual" className="rounded-lg max-w-full max-h-[500px] border shadow" />
-                  <p className="text-xs text-gray-500 mt-2 italic">
-                    Generated from: "{prompt.substring(0, 50)}{prompt.length > 50 ? '...' : ''}"
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        
-        {/* Render images from placeholders */}
-        {imagePlaceholders.map(({ id, placeholder }) => {
-          const image = images[id];
-          if (!image || image === 'loading' || image === 'error') return null;
-          
-          return (
-            <div key={`placeholder-${id}`} className="my-4 flex justify-center w-full">
-              <div className="flex flex-col items-center">
-                <img src={image} alt="Generated visual" className="rounded-lg max-w-full max-h-[500px] border shadow" />
-                <p className="text-xs text-gray-500 mt-2 italic">
-                  Generated image
-                </p>
-              </div>
-            </div>
-          );
-        })}
+        {/* Image generation placeholders */}
+        {renderImagePlaceholders()}
       </div>
       {isUser && (
         <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center ml-3 mt-0.5">
@@ -889,7 +979,7 @@ export const Message: FC<MessageProps> = ({
           onClick={closeModal}
         >
           <div 
-            className="bg-white rounded-lg max-w-[90vw] max-h-[90vh] overflow-auto shadow-xl"
+            className="bg-white rounded-lg max-w-[95vw] max-h-[95vh] w-auto h-auto overflow-auto shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-4 border-b border-gray-200 flex justify-between items-center">
@@ -907,9 +997,9 @@ export const Message: FC<MessageProps> = ({
             </div>
             <div className="p-6">
               {modal.type === 'mermaid' ? (
-                <div className="w-full max-w-4xl mx-auto">
+                <div className="w-full min-w-[800px] min-h-[500px] max-w-[1200px] mx-auto flex items-center justify-center">
                   <React.Suspense fallback={
-                    <div className="flex items-center space-x-2 w-full justify-center h-[400px]">
+                    <div className="flex items-center space-x-2 w-full justify-center h-[500px]">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                       <span className="text-sm text-gray-500">Generating diagram...</span>
                     </div>

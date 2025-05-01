@@ -52,12 +52,6 @@ export default function SignupForm() {
       isValid = false;
     } else {
       // Enhanced email regex that checks for valid format with proper domain
-      // This regex ensures:
-      // - Local part contains valid characters
-      // - @ symbol is present
-      // - Domain has at least one dot
-      // - Domain parts contain valid characters
-      // - Top-level domain is at least 2 characters
       const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
       
       if (!emailRegex.test(formData.email)) {

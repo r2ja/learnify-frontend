@@ -1093,10 +1093,10 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                         </div>
                       </div>
                       
-                      <SuggestedQuestions 
-                        questions={suggestedQuestions} 
-                        onQuestionClick={handleSendMessage} 
-                      />
+                  <SuggestedQuestions 
+                      questions={suggestedQuestions} 
+                      onQuestionClick={handleSendMessage} 
+                    />
                     </div>
                   )}
                 </motion.div>
@@ -1137,8 +1137,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
                             <div className="w-2.5 h-2.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
                           </div>
                         </div>
-                      </div>
-                    </div>
+                  </div>
+                </div>
                   )}
                   
                   {/* Show suggested questions after overview is generated */}

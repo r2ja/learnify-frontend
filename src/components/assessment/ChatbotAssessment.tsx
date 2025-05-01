@@ -36,7 +36,7 @@ export function ChatbotAssessment() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  
+
   // Track previous user to detect changes
   const prevUserIdRef = useRef<string | undefined>(undefined);
   
@@ -114,58 +114,58 @@ export function ChatbotAssessment() {
   const checkExistingProfile = async (userId: string) => {
     if (!userId || userId.trim() === '') {
       console.error('User ID is empty or invalid');
-      setCheckingProfile(false);
-      return;
-    }
+        setCheckingProfile(false);
+        return;
+      }
 
-    try {
-      setCheckingProfile(true);
+      try {
+        setCheckingProfile(true);
       console.log('Checking for existing learning profile for user:', userId);
       
       const response = await fetch(`/api/users/${userId}/learning-profile`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch profile: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log('Learning profile API response:', data);
-      
-      // The profile data is in the 'profile' property
-      const profile = data.profile;
-      
-      // Check if profile exists and has learning style data
-      if (profile && 
-          profile.processingStyle && 
-          profile.perceptionStyle && 
-          profile.inputStyle && 
-          profile.understandingStyle) {
         
-        console.log('Existing profile found with styles:', profile);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch profile: ${response.status}`);
+        }
         
-        // Format the learning style information
-        const styleInfo: LearningStyleInfo = {
-          processingStyle: profile.processingStyle,
-          perceptionStyle: profile.perceptionStyle,
-          inputStyle: profile.inputStyle,
-          understandingStyle: profile.understandingStyle
-        };
+        const data = await response.json();
+        console.log('Learning profile API response:', data);
         
+        // The profile data is in the 'profile' property
+        const profile = data.profile;
+        
+        // Check if profile exists and has learning style data
+        if (profile && 
+            profile.processingStyle && 
+            profile.perceptionStyle && 
+            profile.inputStyle && 
+            profile.understandingStyle) {
+          
+          console.log('Existing profile found with styles:', profile);
+          
+          // Format the learning style information
+          const styleInfo: LearningStyleInfo = {
+            processingStyle: profile.processingStyle,
+            perceptionStyle: profile.perceptionStyle,
+            inputStyle: profile.inputStyle,
+            understandingStyle: profile.understandingStyle
+          };
+          
         setHasExistingProfile(true);
-        setLearningStyle(styleInfo);
-      } else {
-        console.log('No complete learning profile found');
-        setHasExistingProfile(false);
+          setLearningStyle(styleInfo);
+        } else {
+          console.log('No complete learning profile found');
+          setHasExistingProfile(false);
         setLearningStyle(null);
-      }
-    } catch (error) {
-      console.error('Error checking learning profile:', error);
-      setHasExistingProfile(false);
+        }
+      } catch (error) {
+        console.error('Error checking learning profile:', error);
+        setHasExistingProfile(false);
       setLearningStyle(null);
-    } finally {
-      setCheckingProfile(false);
-    }
-  };
+      } finally {
+        setCheckingProfile(false);
+      }
+    };
 
   // Check if user already has a learning profile
   useEffect(() => {
@@ -327,16 +327,16 @@ This information will help us personalize your learning experience.`,
               attempts++;
               try {
                 const saveResponse = await fetch(`/api/users/${user.id}/learning-profile`, {
-                  method: 'PUT',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    ...learningStyles,
-                    assessmentDate: new Date(),
-                  }),
-                });
-                
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                ...learningStyles,
+                assessmentDate: new Date(),
+              }),
+            });
+            
                 if (!saveResponse.ok) {
                   const errorData = await saveResponse.json();
                   console.error('Error response from API:', errorData);
@@ -344,7 +344,7 @@ This information will help us personalize your learning experience.`,
                 }
                 
                 saveSuccess = true;
-                showToast('success', 'Learning profile saved successfully!');
+            showToast('success', 'Learning profile saved successfully!');
               } catch (saveError) {
                 console.error(`Attempt ${attempts} failed:`, saveError);
                 
@@ -545,32 +545,32 @@ This information will help us personalize your learning experience.`,
         <div className="p-8 text-center">
           <h2 className="text-2xl font-bold mb-6 text-[var(--primary)]">Learning Style Assessment</h2>
           
-          <p className="text-gray-700 mb-8 max-w-2xl mx-auto">
-            Discover your learning preferences by taking our assessment. This will help us personalize your learning experience.
-            The assessment consists of 4 questions and takes about 5 minutes to complete.
-          </p>
-          
-          <div className="bg-gray-50 p-6 rounded-lg mb-8 max-w-2xl mx-auto">
-            <h3 className="font-semibold text-lg mb-2">Important Note</h3>
-            <p className="text-gray-600">
-              To ensure accurate results, please complete the entire assessment in one session. 
-              Your learning profile will only be updated after you've answered all questions.
-            </p>
-          </div>
-          
-          <button
-            onClick={handleStartTest}
-            className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-opacity-90 transition-colors"
-          >
-            Start Assessment
-          </button>
-          
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="ml-4 px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            Return to Dashboard
-          </button>
+              <p className="text-gray-700 mb-8 max-w-2xl mx-auto">
+                Discover your learning preferences by taking our assessment. This will help us personalize your learning experience.
+                The assessment consists of 4 questions and takes about 5 minutes to complete.
+              </p>
+              
+              <div className="bg-gray-50 p-6 rounded-lg mb-8 max-w-2xl mx-auto">
+                <h3 className="font-semibold text-lg mb-2">Important Note</h3>
+                <p className="text-gray-600">
+                  To ensure accurate results, please complete the entire assessment in one session. 
+                  Your learning profile will only be updated after you've answered all questions.
+                </p>
+              </div>
+              
+              <button
+                onClick={handleStartTest}
+                className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg hover:bg-opacity-90 transition-colors"
+              >
+                Start Assessment
+              </button>
+              
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="ml-4 px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Return to Dashboard
+              </button>
         </div>
       </div>
     );

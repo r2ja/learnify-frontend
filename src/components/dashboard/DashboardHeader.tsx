@@ -49,7 +49,7 @@ export function DashboardHeader() {
           console.log('Learning profile data:', data);
           // Check if a valid profile exists
           if (data.profile) {
-            setLearningProfile(data);
+          setLearningProfile(data);
             setHasProfile(true);
           } else {
             console.log('No learning profile found for user');
@@ -103,13 +103,13 @@ export function DashboardHeader() {
     <div className="bg-darkTeal rounded-2xl p-6 text-white shadow-md">
       <div className="flex flex-col md:flex-row md:items-center mb-3">
         <div className="flex items-center">
-          <div className="bg-[#33454b] rounded-full h-14 w-14 flex items-center justify-center mr-4">
-            {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold">{getGreeting()}, {user?.name || 'Student'}</h2>
-          </div>
+        <div className="bg-[#33454b] rounded-full h-14 w-14 flex items-center justify-center mr-4">
+          {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
         </div>
+        <div>
+          <h2 className="text-2xl font-bold">{getGreeting()}, {user?.name || 'Student'}</h2>
+        </div>
+      </div>
         
         {hasProfile === false && !loading && (
           <div className="mt-3 md:mt-0 md:ml-auto">

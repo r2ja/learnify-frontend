@@ -110,8 +110,8 @@ export default function LoginForm() {
       
       // Short delay to ensure data is processed 
       setTimeout(() => {
-        // Navigate to the dashboard
-        router.push('/dashboard');
+      // Navigate to the dashboard
+      router.push('/dashboard');
       }, 100);
     } catch (err) {
       console.error('Login error:', err);
