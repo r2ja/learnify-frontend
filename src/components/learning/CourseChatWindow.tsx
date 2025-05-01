@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, FC } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Paperclip, Send, Smile, Edit2, Check } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Send, Smile, Edit2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from './Message';
 import { ChatHistory } from './ChatHistory';
@@ -10,6 +10,8 @@ import { BackgroundPaths } from './BackgroundPaths';
 import ReactMarkdown from 'react-markdown';
 import { v4 as uuidv4 } from 'uuid';
 import { useUser } from '@/lib/hooks/useUser';
+import PdfButton from './PdfButton';
+
 
 interface ChatMessage {
   id: string;
@@ -17,6 +19,7 @@ interface ChatMessage {
   isUser: boolean;
   accentColor: string;
   isMarkdown?: boolean;
+  pdf?: File | null;
 }
 
 interface Course {
@@ -125,6 +128,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
   const [showCourseOverview, setShowCourseOverview] = useState(false);
   const [isGeneratingOverview, setIsGeneratingOverview] = useState(false);
+  const [pdfFile, setPdfFlie] = useState<File | null>(null);
   
   // Add state for learning profile and user language
   const [userLanguage, setUserLanguage] = useState<string>("english");
@@ -163,12 +167,12 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
     
     ws.onmessage = (event) => {
       try {
-        console.log('WebSocket message received:', event.data);
+        // console.log('WebSocket message received:', event.data);
         const data = JSON.parse(event.data);
-        console.log('Parsed WebSocket message:', data);
+        // console.log('Parsed WebSocket message:', data);
         handleWebSocketMessage(data);
       } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+        // console.error('Error parsing WebSocket message:', error);
       }
     };
     
@@ -619,14 +623,14 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       setResponseComplete(true); // Save even on error
     } else if (data.type === 'reasoning') {
       // Just log reasoning messages for debugging
-      console.log(`Reasoning message received: ${JSON.stringify(data).substring(0, 100)}...`);
+      // console.log(`Reasoning message received: ${JSON.stringify(data).substring(0, 100)}...`);
       // Don't update UI for reasoning messages
     } else {
       console.log(`Unknown message type received: ${data.type}`);
     }
   };
 
-  const sendMessageToWebSocket = (message: string) => {
+  const sendMessageToWebSocket = async(message: string) => {
     if (!selectedCourse || !selectedModule) {
       setMessages(prev => [
         ...prev,
@@ -654,6 +658,15 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       }
 
     if (socket && socket.readyState === WebSocket.OPEN) {
+
+      let pdfbase64
+      if(pdfFile) {
+        const arrayBuffer = await pdfFile.arrayBuffer();
+         pdfbase64 = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''))
+      }
+          
+
       // Prepare data to send
       const messageData = {
         message: message,
@@ -697,7 +710,8 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
         processingStyle: learningProfile.processingStyle,
         perceptionStyle: learningProfile.perceptionStyle,
         inputStyle: learningProfile.inputStyle,
-        understandingStyle: learningProfile.understandingStyle
+        understandingStyle: learningProfile.understandingStyle,
+        pdf: pdfFile ? pdfbase64 : null,
       };
       
       // Log the outgoing message
@@ -705,6 +719,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       
       // Send the message
       socket.send(JSON.stringify(messageData));
+      setPdfFlie(null); // Reset PDF file after sending
       setIsLoading(true);
     } else {
       console.error('WebSocket is not connected');
@@ -721,24 +736,27 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
       ]);
     }
   };
+  
 
-  const handleSendMessage = (text = inputMessage) => {
-    if (text.trim()) {
+  const handleSendMessage = async (text = inputMessage) => {
+    let finalText = text;
+  
+    if (finalText.trim()) {
       const userMessage: ChatMessage = {
         id: Date.now().toString(),
-        content: text,
+        content: finalText,
         isUser: true,
         accentColor: "var(--primary)",
+        pdf: pdfFile,
       };
-
+  
       setMessages((prev) => [...prev, userMessage]);
       setInputMessage("");
       setIsInitialState(false);
-      
-      // Send the message to the WebSocket server
-      sendMessageToWebSocket(text);
+      sendMessageToWebSocket(finalText);
     }
   };
+  
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1163,12 +1181,7 @@ export function CourseChatWindow({ courseId, chapterId }: CourseChatWindowProps)
           {/* Input Area */}
           <div className="p-4 border-t border-gray-200">
             <div className="flex items-center gap-3 bg-white rounded-xl p-2 border border-gray-200">
-              <button
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                aria-label="Add attachment"
-              >
-                <Paperclip size={20} />
-              </button>
+              <PdfButton pdfFile={pdfFile} setPdfFile={setPdfFlie} />
               <textarea
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
